@@ -81,10 +81,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into_string()
             .map_err(|_| "Invalid Office fixture name")?;
         let bytes = fs::read(entry.path())?;
-        let markdown = khor_node::preview::markdown(&name, &bytes)?;
+        // This Lab sample requires the password offered by the browser test.
+        let encrypted = name == "加密周报.docx";
+        let html = if encrypted {
+            String::new()
+        } else {
+            khor_node::preview::html(&khor_node::preview::markdown(&name, &bytes)?)
+        };
         office_previews.insert(
             format!("office/{name}"),
-            json!({"total": bytes.len(), "html": khor_node::preview::html(&markdown)}),
+            json!({"total": bytes.len(), "html": html, "encrypted": encrypted}),
         );
     }
     let ids: Vec<_> = std::iter::once("e".repeat(64))

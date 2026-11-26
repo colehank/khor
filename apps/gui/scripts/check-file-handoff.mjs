@@ -89,9 +89,11 @@ window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<T
   await page.evaluate(()=>window.showAttachment('/project/report.docx'));
   await page.locator('[data-file-preview-body] [data-office-preview="docx"][data-ready] canvas').first().waitFor({timeout:20_000});
   assert.equal(await page.locator('[data-file-preview-head] [data-segmented]').count(),0);
+  await page.locator('[data-file-preview-head] [data-office-find-open]').waitFor();
   await page.evaluate(base64=>window.showLocalOffice(base64),sample.toString('base64'));
   await page.locator('[data-attachment-file] [data-office-preview="docx"][data-ready] canvas').first().waitFor({timeout:20_000});
   assert.equal(await page.locator('[data-attachment-file] [data-file-face-toggle]').count(),0);
+  await page.locator('[data-attachment-file] [data-office-find-open]').waitFor();
   assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='preview').length),2,'local drafts never ask the host for Office bytes');
   assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd.startsWith('file_preview_')).length),0,'Office never uses native preview');
   await page.screenshot({path:join(out,'office-local-attachment.png')});

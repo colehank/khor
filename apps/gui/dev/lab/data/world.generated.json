@@ -225,7 +225,7 @@
           "name": "design-system",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460031,
+          "at_ms": 1795711226143,
           "from": null,
           "received_ms": null
         },
@@ -233,7 +233,7 @@
           "name": "project",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460015,
+          "at_ms": 1795711226137,
           "from": null,
           "received_ms": null
         },
@@ -241,7 +241,7 @@
           "name": "research-notes",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460018,
+          "at_ms": 1795711226140,
           "from": null,
           "received_ms": null
         },
@@ -249,7 +249,7 @@
           "name": "资料库",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460035,
+          "at_ms": 1795711226145,
           "from": null,
           "received_ms": null
         }
@@ -262,7 +262,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460021,
+          "at_ms": 1795711226141,
           "from": null,
           "received_ms": null
         },
@@ -270,7 +270,7 @@
           "name": "media",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460030,
+          "at_ms": 1795711226143,
           "from": null,
           "received_ms": null
         },
@@ -278,7 +278,7 @@
           "name": "office",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460020,
+          "at_ms": 1795711226141,
           "from": null,
           "received_ms": null
         },
@@ -286,7 +286,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460031,
+          "at_ms": 1795711226143,
           "from": null,
           "received_ms": null
         },
@@ -342,7 +342,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460019,
+          "at_ms": 1795711226141,
           "from": null,
           "received_ms": null
         },
@@ -463,26 +463,34 @@
     "design-system/office": {
       "entries": [
         {
+          "name": "加密周报.docx",
+          "dir": false,
+          "size": 44544,
+          "at_ms": 1795711195025,
+          "from": null,
+          "received_ms": null
+        },
+        {
           "name": "阶段汇报.pptx",
           "dir": false,
-          "size": 31602,
-          "at_ms": 1795702198235,
+          "size": 37944,
+          "at_ms": 1795711195078,
           "from": null,
           "received_ms": null
         },
         {
           "name": "项目周报.docx",
           "dir": false,
-          "size": 37327,
-          "at_ms": 1795702198196,
+          "size": 38941,
+          "at_ms": 1795711194978,
           "from": null,
           "received_ms": null
         },
         {
           "name": "验收台账.xlsx",
           "dir": false,
-          "size": 15532,
-          "at_ms": 1795702198307,
+          "size": 18746,
+          "at_ms": 1795711195058,
           "from": null,
           "received_ms": null
         }
@@ -524,7 +532,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460012,
+          "at_ms": 1795711226132,
           "from": null,
           "received_ms": null
         },
@@ -532,7 +540,7 @@
           "name": "media",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460015,
+          "at_ms": 1795711226137,
           "from": null,
           "received_ms": null
         },
@@ -540,7 +548,7 @@
           "name": "office",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460011,
+          "at_ms": 1795711226131,
           "from": null,
           "received_ms": null
         },
@@ -548,7 +556,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460015,
+          "at_ms": 1795711226138,
           "from": null,
           "received_ms": null
         },
@@ -604,7 +612,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460010,
+          "at_ms": 1795711226130,
           "from": null,
           "received_ms": null
         },
@@ -725,26 +733,34 @@
     "project/office": {
       "entries": [
         {
+          "name": "加密周报.docx",
+          "dir": false,
+          "size": 44544,
+          "at_ms": 1795711195025,
+          "from": null,
+          "received_ms": null
+        },
+        {
           "name": "阶段汇报.pptx",
           "dir": false,
-          "size": 31602,
-          "at_ms": 1795702198235,
+          "size": 37944,
+          "at_ms": 1795711195078,
           "from": null,
           "received_ms": null
         },
         {
           "name": "项目周报.docx",
           "dir": false,
-          "size": 37327,
-          "at_ms": 1795702198196,
+          "size": 38941,
+          "at_ms": 1795711194978,
           "from": null,
           "received_ms": null
         },
         {
           "name": "验收台账.xlsx",
           "dir": false,
-          "size": 15532,
-          "at_ms": 1795702198307,
+          "size": 18746,
+          "at_ms": 1795711195058,
           "from": null,
           "received_ms": null
         }
@@ -786,7 +802,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460016,
+          "at_ms": 1795711226139,
           "from": null,
           "received_ms": null
         },
@@ -794,7 +810,7 @@
           "name": "media",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460018,
+          "at_ms": 1795711226140,
           "from": null,
           "received_ms": null
         },
@@ -802,7 +818,7 @@
           "name": "office",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460016,
+          "at_ms": 1795711226138,
           "from": null,
           "received_ms": null
         },
@@ -810,7 +826,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460019,
+          "at_ms": 1795711226140,
           "from": null,
           "received_ms": null
         },
@@ -866,7 +882,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460015,
+          "at_ms": 1795711226138,
           "from": null,
           "received_ms": null
         },
@@ -987,26 +1003,34 @@
     "research-notes/office": {
       "entries": [
         {
+          "name": "加密周报.docx",
+          "dir": false,
+          "size": 44544,
+          "at_ms": 1795711195025,
+          "from": null,
+          "received_ms": null
+        },
+        {
           "name": "阶段汇报.pptx",
           "dir": false,
-          "size": 31602,
-          "at_ms": 1795702198235,
+          "size": 37944,
+          "at_ms": 1795711195078,
           "from": null,
           "received_ms": null
         },
         {
           "name": "项目周报.docx",
           "dir": false,
-          "size": 37327,
-          "at_ms": 1795702198196,
+          "size": 38941,
+          "at_ms": 1795711194978,
           "from": null,
           "received_ms": null
         },
         {
           "name": "验收台账.xlsx",
           "dir": false,
-          "size": 15532,
-          "at_ms": 1795702198307,
+          "size": 18746,
+          "at_ms": 1795711195058,
           "from": null,
           "received_ms": null
         }
@@ -1048,7 +1072,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460032,
+          "at_ms": 1795711226144,
           "from": null,
           "received_ms": null
         },
@@ -1056,7 +1080,7 @@
           "name": "media",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460035,
+          "at_ms": 1795711226145,
           "from": null,
           "received_ms": null
         },
@@ -1064,7 +1088,7 @@
           "name": "office",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460032,
+          "at_ms": 1795711226144,
           "from": null,
           "received_ms": null
         },
@@ -1072,7 +1096,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460035,
+          "at_ms": 1795711226146,
           "from": null,
           "received_ms": null
         },
@@ -1128,7 +1152,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1795706460031,
+          "at_ms": 1795711226143,
           "from": null,
           "received_ms": null
         },
@@ -1249,26 +1273,34 @@
     "资料库/office": {
       "entries": [
         {
+          "name": "加密周报.docx",
+          "dir": false,
+          "size": 44544,
+          "at_ms": 1795711195025,
+          "from": null,
+          "received_ms": null
+        },
+        {
           "name": "阶段汇报.pptx",
           "dir": false,
-          "size": 31602,
-          "at_ms": 1795702198235,
+          "size": 37944,
+          "at_ms": 1795711195078,
           "from": null,
           "received_ms": null
         },
         {
           "name": "项目周报.docx",
           "dir": false,
-          "size": 37327,
-          "at_ms": 1795702198196,
+          "size": 38941,
+          "at_ms": 1795711194978,
           "from": null,
           "received_ms": null
         },
         {
           "name": "验收台账.xlsx",
           "dir": false,
-          "size": 15532,
-          "at_ms": 1795702198307,
+          "size": 18746,
+          "at_ms": 1795711195058,
           "from": null,
           "received_ms": null
         }
@@ -1384,17 +1416,25 @@
     "资料库/src/navigation.ts": "export const navigation = {preview: true, confirmOnRelease: true};\n"
   },
   "office_previews": {
+    "office/加密周报.docx": {
+      "total": 44544,
+      "html": "",
+      "encrypted": true
+    },
     "office/阶段汇报.pptx": {
-      "total": 31602,
-      "html": "<h2>Slide 1</h2>\n<p>项目阶段回顾</p>\n<p>从需求确认到首轮验收</p>\n<p>范围确认</p>\n<p>接口联调</p>\n<p>体验验收</p>\n<p>Khor Lab  ·  1 / 3</p>\n<h2>Slide 2</h2>\n<p>阶段进度</p>\n<p>通过典型文件验证两种尺寸下的呈现</p>\n<p>Word · 分页</p>\n<p>PPT · 翻页</p>\n<p>Excel · 工作表</p>\n<p>Khor Lab  ·  2 / 3</p>\n<h2>Slide 3</h2>\n<p>评审结论</p>\n<p>Khor Lab 预览样例</p>\n<p>查看布局</p>\n<p>检查交互</p>\n<p>记录反馈</p>\n<p>Khor Lab  ·  3 / 3</p>\n"
+      "total": 37944,
+      "html": "<h2>Slide 1</h2>\n<p>项目阶段回顾</p>\n<p>从需求确认到首轮验收</p>\n<p>范围确认</p>\n<p>接口联调</p>\n<p>体验验收</p>\n<p>Khor Lab  ·  1 / 3</p>\n<blockquote>\n<p>讲稿：先介绍项目目标，再说明当前验收结果。</p>\n</blockquote>\n<h2>Slide 2</h2>\n<p>阶段进度</p>\n<p>通过典型文件验证两种尺寸下的呈现</p>\n<p>Word · 分页</p>\n<p>PPT · 翻页</p>\n<p>Excel · 工作表</p>\n<p>Khor Lab  ·  2 / 3</p>\n<blockquote>\n<p>讲稿：重点说明阶段进度与下一步安排。</p>\n</blockquote>\n<h2>Slide 3</h2>\n<p>评审结论</p>\n<p>Khor Lab 预览样例</p>\n<p>查看布局</p>\n<p>检查交互</p>\n<p>记录反馈</p>\n<p>Khor Lab  ·  3 / 3</p>\n",
+      "encrypted": false
     },
     "office/项目周报.docx": {
-      "total": 37327,
-      "html": "<p>项目进度周报\n2026 年 11 月  ·  Khor Lab 示例文档</p>\n<h1>本周摘要</h1>\n<p>本周完成了<strong>第一阶段验收</strong>，下一步复核跨平台显示和远端文件读取。</p>\n<table><thead><tr><th>工作项</th><th>状态</th><th>负责人</th></tr></thead><tbody>\n<tr><td>需求确认</td><td>已完成</td><td>小林</td></tr>\n<tr><td>接口联调</td><td>进行中</td><td>小周</td></tr>\n<tr><td>体验验收</td><td>计划中</td><td>小陈</td></tr>\n</tbody></table>\n<h1>验收范围</h1>\n<p>中文正文和表格\n段落、页边距与分页\n从侧栏切换其他文件后重新打开</p>\n<hr />\n<h1>下周计划</h1>\n<p>确认移动端的预览范围，收集三类文件的显示差异。\n本文件仅用于预览验收，内容均为虚构。</p>\n"
+      "total": 38941,
+      "html": "<p>项目进度周报\n2026 年 11 月  ·  Khor Lab 示例文档</p>\n<h1>本周摘要</h1>\n<p>本周完成了<strong>第一阶段验收</strong>，下一步复核跨平台显示和远端文件读取。</p>\n<table><thead><tr><th>工作项</th><th>状态</th><th>负责人</th></tr></thead><tbody>\n<tr><td>需求确认</td><td>已完成</td><td>小林</td></tr>\n<tr><td>接口联调</td><td>进行中</td><td>小周</td></tr>\n<tr><td>体验验收</td><td>计划中</td><td>小陈</td></tr>\n</tbody></table>\n<h1>验收范围</h1>\n<p>中文正文和表格\n段落、页边距与分页\n从侧栏切换其他文件后重新打开</p>\n<hr />\n<h1>下周计划</h1>\n<p>确认移动端的预览范围，收集三类文件的显示差异。\n本文件仅用于预览验收，内容均为虚构。\n本周已完成联调。\n验收得分\n<img src=\"rId10\" alt=\"\" /></p>\n",
+      "encrypted": false
     },
     "office/验收台账.xlsx": {
-      "total": 15532,
-      "html": "<h2>任务明细</h2>\n<table><thead><tr><th>编号</th><th>事项</th><th>负责人</th><th>阶段</th><th>进度</th><th>预计工时</th><th>实际工时</th><th>优先级</th><th>组别</th><th>备注</th></tr></thead><tbody>\n<tr><td>1</td><td>预览验收任务001</td><td>小周</td><td>进行中</td><td>7%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>2</td><td>预览验收任务002</td><td>小陈</td><td>已完成</td><td>14%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>3</td><td>预览验收任务003</td><td>小林</td><td>计划中</td><td>21%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>4</td><td>预览验收任务004</td><td>小周</td><td>进行中</td><td>28%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>5</td><td>预览验收任务005</td><td>小陈</td><td>已完成</td><td>35%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>6</td><td>预览验收任务006</td><td>小林</td><td>计划中</td><td>42%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>7</td><td>预览验收任务007</td><td>小周</td><td>进行中</td><td>49%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>8</td><td>预览验收任务008</td><td>小陈</td><td>已完成</td><td>56%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>9</td><td>预览验收任务009</td><td>小林</td><td>计划中</td><td>63%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>10</td><td>预览验收任务010</td><td>小周</td><td>进行中</td><td>70%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>11</td><td>预览验收任务011</td><td>小陈</td><td>已完成</td><td>77%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>12</td><td>预览验收任务012</td><td>小林</td><td>计划中</td><td>84%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>13</td><td>预览验收任务013</td><td>小周</td><td>进行中</td><td>91%</td><td>8</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>14</td><td>预览验收任务014</td><td>小陈</td><td>已完成</td><td>98%</td><td>2</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>15</td><td>预览验收任务015</td><td>小林</td><td>计划中</td><td>4%</td><td>3</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>16</td><td>预览验收任务016</td><td>小周</td><td>进行中</td><td>11%</td><td>4</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>17</td><td>预览验收任务017</td><td>小陈</td><td>已完成</td><td>18%</td><td>5</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>18</td><td>预览验收任务018</td><td>小林</td><td>计划中</td><td>25%</td><td>6</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>19</td><td>预览验收任务019</td><td>小周</td><td>进行中</td><td>32%</td><td>7</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>20</td><td>预览验收任务020</td><td>小陈</td><td>已完成</td><td>39%</td><td>8</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>21</td><td>预览验收任务021</td><td>小林</td><td>计划中</td><td>46%</td><td>2</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>22</td><td>预览验收任务022</td><td>小周</td><td>进行中</td><td>53%</td><td>3</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>23</td><td>预览验收任务023</td><td>小陈</td><td>已完成</td><td>60%</td><td>4</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>24</td><td>预览验收任务024</td><td>小林</td><td>计划中</td><td>67%</td><td>5</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>25</td><td>预览验收任务025</td><td>小周</td><td>进行中</td><td>74%</td><td>6</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>26</td><td>预览验收任务026</td><td>小陈</td><td>已完成</td><td>81%</td><td>7</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>27</td><td>预览验收任务027</td><td>小林</td><td>计划中</td><td>88%</td><td>8</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>28</td><td>预览验收任务028</td><td>小周</td><td>进行中</td><td>95%</td><td>2</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>29</td><td>预览验收任务029</td><td>小陈</td><td>已完成</td><td>1%</td><td>3</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>30</td><td>预览验收任务030</td><td>小林</td><td>计划中</td><td>8%</td><td>4</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>31</td><td>预览验收任务031</td><td>小周</td><td>进行中</td><td>15%</td><td>5</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>32</td><td>预览验收任务032</td><td>小陈</td><td>已完成</td><td>22%</td><td>6</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>33</td><td>预览验收任务033</td><td>小林</td><td>计划中</td><td>29%</td><td>7</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>34</td><td>预览验收任务034</td><td>小周</td><td>进行中</td><td>36%</td><td>8</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>35</td><td>预览验收任务035</td><td>小陈</td><td>已完成</td><td>43%</td><td>2</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>36</td><td>预览验收任务036</td><td>小林</td><td>计划中</td><td>50%</td><td>3</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>37</td><td>预览验收任务037</td><td>小周</td><td>进行中</td><td>57%</td><td>4</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>38</td><td>预览验收任务038</td><td>小陈</td><td>已完成</td><td>64%</td><td>5</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>39</td><td>预览验收任务039</td><td>小林</td><td>计划中</td><td>71%</td><td>6</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>40</td><td>预览验收任务040</td><td>小周</td><td>进行中</td><td>78%</td><td>7</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>41</td><td>预览验收任务041</td><td>小陈</td><td>已完成</td><td>85%</td><td>8</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>42</td><td>预览验收任务042</td><td>小林</td><td>计划中</td><td>92%</td><td>2</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>43</td><td>预览验收任务043</td><td>小周</td><td>进行中</td><td>99%</td><td>3</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>44</td><td>预览验收任务044</td><td>小陈</td><td>已完成</td><td>5%</td><td>4</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>45</td><td>预览验收任务045</td><td>小林</td><td>计划中</td><td>12%</td><td>5</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>46</td><td>预览验收任务046</td><td>小周</td><td>进行中</td><td>19%</td><td>6</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>47</td><td>预览验收任务047</td><td>小陈</td><td>已完成</td><td>26%</td><td>7</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>48</td><td>预览验收任务048</td><td>小林</td><td>计划中</td><td>33%</td><td>8</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>49</td><td>预览验收任务049</td><td>小周</td><td>进行中</td><td>40%</td><td>2</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>50</td><td>预览验收任务050</td><td>小陈</td><td>已完成</td><td>47%</td><td>3</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>51</td><td>预览验收任务051</td><td>小林</td><td>计划中</td><td>54%</td><td>4</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>52</td><td>预览验收任务052</td><td>小周</td><td>进行中</td><td>61%</td><td>5</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>53</td><td>预览验收任务053</td><td>小陈</td><td>已完成</td><td>68%</td><td>6</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>54</td><td>预览验收任务054</td><td>小林</td><td>计划中</td><td>75%</td><td>7</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>55</td><td>预览验收任务055</td><td>小周</td><td>进行中</td><td>82%</td><td>8</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>56</td><td>预览验收任务056</td><td>小陈</td><td>已完成</td><td>89%</td><td>2</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>57</td><td>预览验收任务057</td><td>小林</td><td>计划中</td><td>96%</td><td>3</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>58</td><td>预览验收任务058</td><td>小周</td><td>进行中</td><td>2%</td><td>4</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>59</td><td>预览验收任务059</td><td>小陈</td><td>已完成</td><td>9%</td><td>5</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>60</td><td>预览验收任务060</td><td>小林</td><td>计划中</td><td>16%</td><td>6</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>61</td><td>预览验收任务061</td><td>小周</td><td>进行中</td><td>23%</td><td>7</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>62</td><td>预览验收任务062</td><td>小陈</td><td>已完成</td><td>30%</td><td>8</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>63</td><td>预览验收任务063</td><td>小林</td><td>计划中</td><td>37%</td><td>2</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>64</td><td>预览验收任务064</td><td>小周</td><td>进行中</td><td>44%</td><td>3</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>65</td><td>预览验收任务065</td><td>小陈</td><td>已完成</td><td>51%</td><td>4</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>66</td><td>预览验收任务066</td><td>小林</td><td>计划中</td><td>58%</td><td>5</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>67</td><td>预览验收任务067</td><td>小周</td><td>进行中</td><td>65%</td><td>6</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>68</td><td>预览验收任务068</td><td>小陈</td><td>已完成</td><td>72%</td><td>7</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>69</td><td>预览验收任务069</td><td>小林</td><td>计划中</td><td>79%</td><td>8</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>70</td><td>预览验收任务070</td><td>小周</td><td>进行中</td><td>86%</td><td>2</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>71</td><td>预览验收任务071</td><td>小陈</td><td>已完成</td><td>93%</td><td>3</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>72</td><td>预览验收任务072</td><td>小林</td><td>计划中</td><td>100%</td><td>4</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>73</td><td>预览验收任务073</td><td>小周</td><td>进行中</td><td>6%</td><td>5</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>74</td><td>预览验收任务074</td><td>小陈</td><td>已完成</td><td>13%</td><td>6</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>75</td><td>预览验收任务075</td><td>小林</td><td>计划中</td><td>20%</td><td>7</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>76</td><td>预览验收任务076</td><td>小周</td><td>进行中</td><td>27%</td><td>8</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>77</td><td>预览验收任务077</td><td>小陈</td><td>已完成</td><td>34%</td><td>2</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>78</td><td>预览验收任务078</td><td>小林</td><td>计划中</td><td>41%</td><td>3</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>79</td><td>预览验收任务079</td><td>小周</td><td>进行中</td><td>48%</td><td>4</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>80</td><td>预览验收任务080</td><td>小陈</td><td>已完成</td><td>55%</td><td>5</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>81</td><td>预览验收任务081</td><td>小林</td><td>计划中</td><td>62%</td><td>6</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>82</td><td>预览验收任务082</td><td>小周</td><td>进行中</td><td>69%</td><td>7</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>83</td><td>预览验收任务083</td><td>小陈</td><td>已完成</td><td>76%</td><td>8</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>84</td><td>预览验收任务084</td><td>小林</td><td>计划中</td><td>83%</td><td>2</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>85</td><td>预览验收任务085</td><td>小周</td><td>进行中</td><td>90%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>86</td><td>预览验收任务086</td><td>小陈</td><td>已完成</td><td>97%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>87</td><td>预览验收任务087</td><td>小林</td><td>计划中</td><td>3%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>88</td><td>预览验收任务088</td><td>小周</td><td>进行中</td><td>10%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>89</td><td>预览验收任务089</td><td>小陈</td><td>已完成</td><td>17%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>90</td><td>预览验收任务090</td><td>小林</td><td>计划中</td><td>24%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>91</td><td>预览验收任务091</td><td>小周</td><td>进行中</td><td>31%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>92</td><td>预览验收任务092</td><td>小陈</td><td>已完成</td><td>38%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>93</td><td>预览验收任务093</td><td>小林</td><td>计划中</td><td>45%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>94</td><td>预览验收任务094</td><td>小周</td><td>进行中</td><td>52%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>95</td><td>预览验收任务095</td><td>小陈</td><td>已完成</td><td>59%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>96</td><td>预览验收任务096</td><td>小林</td><td>计划中</td><td>66%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>97</td><td>预览验收任务097</td><td>小周</td><td>进行中</td><td>73%</td><td>8</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>98</td><td>预览验收任务098</td><td>小陈</td><td>已完成</td><td>80%</td><td>2</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>99</td><td>预览验收任务099</td><td>小林</td><td>计划中</td><td>87%</td><td>3</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>100</td><td>预览验收任务100</td><td>小周</td><td>进行中</td><td>94%</td><td>4</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>101</td><td>预览验收任务101</td><td>小陈</td><td>已完成</td><td>0%</td><td>5</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>102</td><td>预览验收任务102</td><td>小林</td><td>计划中</td><td>7%</td><td>6</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>103</td><td>预览验收任务103</td><td>小周</td><td>进行中</td><td>14%</td><td>7</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>104</td><td>预览验收任务104</td><td>小陈</td><td>已完成</td><td>21%</td><td>8</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>105</td><td>预览验收任务105</td><td>小林</td><td>计划中</td><td>28%</td><td>2</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>106</td><td>预览验收任务106</td><td>小周</td><td>进行中</td><td>35%</td><td>3</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>107</td><td>预览验收任务107</td><td>小陈</td><td>已完成</td><td>42%</td><td>4</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>108</td><td>预览验收任务108</td><td>小林</td><td>计划中</td><td>49%</td><td>5</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>109</td><td>预览验收任务109</td><td>小周</td><td>进行中</td><td>56%</td><td>6</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>110</td><td>预览验收任务110</td><td>小陈</td><td>已完成</td><td>63%</td><td>7</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>111</td><td>预览验收任务111</td><td>小林</td><td>计划中</td><td>70%</td><td>8</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>112</td><td>预览验收任务112</td><td>小周</td><td>进行中</td><td>77%</td><td>2</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>113</td><td>预览验收任务113</td><td>小陈</td><td>已完成</td><td>84%</td><td>3</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>114</td><td>预览验收任务114</td><td>小林</td><td>计划中</td><td>91%</td><td>4</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>115</td><td>预览验收任务115</td><td>小周</td><td>进行中</td><td>98%</td><td>5</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>116</td><td>预览验收任务116</td><td>小陈</td><td>已完成</td><td>4%</td><td>6</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>117</td><td>预览验收任务117</td><td>小林</td><td>计划中</td><td>11%</td><td>7</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>118</td><td>预览验收任务118</td><td>小周</td><td>进行中</td><td>18%</td><td>8</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>119</td><td>预览验收任务119</td><td>小陈</td><td>已完成</td><td>25%</td><td>2</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>120</td><td>预览验收任务120</td><td>小林</td><td>计划中</td><td>32%</td><td>3</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>121</td><td>预览验收任务121</td><td>小周</td><td>进行中</td><td>39%</td><td>4</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>122</td><td>预览验收任务122</td><td>小陈</td><td>已完成</td><td>46%</td><td>5</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>123</td><td>预览验收任务123</td><td>小林</td><td>计划中</td><td>53%</td><td>6</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>124</td><td>预览验收任务124</td><td>小周</td><td>进行中</td><td>60%</td><td>7</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>125</td><td>预览验收任务125</td><td>小陈</td><td>已完成</td><td>67%</td><td>8</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>126</td><td>预览验收任务126</td><td>小林</td><td>计划中</td><td>74%</td><td>2</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>127</td><td>预览验收任务127</td><td>小周</td><td>进行中</td><td>81%</td><td>3</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>128</td><td>预览验收任务128</td><td>小陈</td><td>已完成</td><td>88%</td><td>4</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>129</td><td>预览验收任务129</td><td>小林</td><td>计划中</td><td>95%</td><td>5</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>130</td><td>预览验收任务130</td><td>小周</td><td>进行中</td><td>1%</td><td>6</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>131</td><td>预览验收任务131</td><td>小陈</td><td>已完成</td><td>8%</td><td>7</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>132</td><td>预览验收任务132</td><td>小林</td><td>计划中</td><td>15%</td><td>8</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>133</td><td>预览验收任务133</td><td>小周</td><td>进行中</td><td>22%</td><td>2</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>134</td><td>预览验收任务134</td><td>小陈</td><td>已完成</td><td>29%</td><td>3</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>135</td><td>预览验收任务135</td><td>小林</td><td>计划中</td><td>36%</td><td>4</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>136</td><td>预览验收任务136</td><td>小周</td><td>进行中</td><td>43%</td><td>5</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>137</td><td>预览验收任务137</td><td>小陈</td><td>已完成</td><td>50%</td><td>6</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>138</td><td>预览验收任务138</td><td>小林</td><td>计划中</td><td>57%</td><td>7</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>139</td><td>预览验收任务139</td><td>小周</td><td>进行中</td><td>64%</td><td>8</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>140</td><td>预览验收任务140</td><td>小陈</td><td>已完成</td><td>71%</td><td>2</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>141</td><td>预览验收任务141</td><td>小林</td><td>计划中</td><td>78%</td><td>3</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>142</td><td>预览验收任务142</td><td>小周</td><td>进行中</td><td>85%</td><td>4</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>143</td><td>预览验收任务143</td><td>小陈</td><td>已完成</td><td>92%</td><td>5</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>144</td><td>预览验收任务144</td><td>小林</td><td>计划中</td><td>99%</td><td>6</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>145</td><td>预览验收任务145</td><td>小周</td><td>进行中</td><td>5%</td><td>7</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>146</td><td>预览验收任务146</td><td>小陈</td><td>已完成</td><td>12%</td><td>8</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>147</td><td>预览验收任务147</td><td>小林</td><td>计划中</td><td>19%</td><td>2</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>148</td><td>预览验收任务148</td><td>小周</td><td>进行中</td><td>26%</td><td>3</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>149</td><td>预览验收任务149</td><td>小陈</td><td>已完成</td><td>33%</td><td>4</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>150</td><td>预览验收任务150</td><td>小林</td><td>计划中</td><td>40%</td><td>5</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>151</td><td>预览验收任务151</td><td>小周</td><td>进行中</td><td>47%</td><td>6</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>152</td><td>预览验收任务152</td><td>小陈</td><td>已完成</td><td>54%</td><td>7</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>153</td><td>预览验收任务153</td><td>小林</td><td>计划中</td><td>61%</td><td>8</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>154</td><td>预览验收任务154</td><td>小周</td><td>进行中</td><td>68%</td><td>2</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>155</td><td>预览验收任务155</td><td>小陈</td><td>已完成</td><td>75%</td><td>3</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>156</td><td>预览验收任务156</td><td>小林</td><td>计划中</td><td>82%</td><td>4</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>157</td><td>预览验收任务157</td><td>小周</td><td>进行中</td><td>89%</td><td>5</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>158</td><td>预览验收任务158</td><td>小陈</td><td>已完成</td><td>96%</td><td>6</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>159</td><td>预览验收任务159</td><td>小林</td><td>计划中</td><td>2%</td><td>7</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>160</td><td>预览验收任务160</td><td>小周</td><td>进行中</td><td>9%</td><td>8</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>161</td><td>预览验收任务161</td><td>小陈</td><td>已完成</td><td>16%</td><td>2</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>162</td><td>预览验收任务162</td><td>小林</td><td>计划中</td><td>23%</td><td>3</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>163</td><td>预览验收任务163</td><td>小周</td><td>进行中</td><td>30%</td><td>4</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>164</td><td>预览验收任务164</td><td>小陈</td><td>已完成</td><td>37%</td><td>5</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>165</td><td>预览验收任务165</td><td>小林</td><td>计划中</td><td>44%</td><td>6</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>166</td><td>预览验收任务166</td><td>小周</td><td>进行中</td><td>51%</td><td>7</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>167</td><td>预览验收任务167</td><td>小陈</td><td>已完成</td><td>58%</td><td>8</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>168</td><td>预览验收任务168</td><td>小林</td><td>计划中</td><td>65%</td><td>2</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>169</td><td>预览验收任务169</td><td>小周</td><td>进行中</td><td>72%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>170</td><td>预览验收任务170</td><td>小陈</td><td>已完成</td><td>79%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>171</td><td>预览验收任务171</td><td>小林</td><td>计划中</td><td>86%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>172</td><td>预览验收任务172</td><td>小周</td><td>进行中</td><td>93%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>173</td><td>预览验收任务173</td><td>小陈</td><td>已完成</td><td>100%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>174</td><td>预览验收任务174</td><td>小林</td><td>计划中</td><td>6%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>175</td><td>预览验收任务175</td><td>小周</td><td>进行中</td><td>13%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>176</td><td>预览验收任务176</td><td>小陈</td><td>已完成</td><td>20%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>177</td><td>预览验收任务177</td><td>小林</td><td>计划中</td><td>27%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>178</td><td>预览验收任务178</td><td>小周</td><td>进行中</td><td>34%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>179</td><td>预览验收任务179</td><td>小陈</td><td>已完成</td><td>41%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>180</td><td>预览验收任务180</td><td>小林</td><td>计划中</td><td>48%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n</tbody></table>\n<h2>验收汇总</h2>\n<table><thead><tr><th>文件类型</th><th>布局检查</th><th>交互检查</th><th>样例数量</th></tr></thead><tbody>\n<tr><td>Word</td><td>标题与表格</td><td>文档滚动</td><td>1</td></tr>\n<tr><td>PowerPoint</td><td>背景与色块</td><td>幻灯片翻页</td><td>3</td></tr>\n<tr><td>Excel</td><td>列宽与样式</td><td>工作表切换</td><td>2</td></tr>\n</tbody></table>\n"
+      "total": 18746,
+      "html": "<h2>任务明细</h2>\n<table><thead><tr><th>编号</th><th>事项</th><th>负责人</th><th>阶段</th><th>进度</th><th>预计工时</th><th>实际工时</th><th>优先级</th><th>组别</th><th>备注</th></tr></thead><tbody>\n<tr><td>1</td><td>预览验收任务001</td><td>小周</td><td>进行中</td><td>7%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>2</td><td>预览验收任务002</td><td>小陈</td><td>已完成</td><td>14%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>3</td><td>预览验收任务003</td><td>小林</td><td>计划中</td><td>21%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>4</td><td>预览验收任务004</td><td>小周</td><td>进行中</td><td>28%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>5</td><td>预览验收任务005</td><td>小陈</td><td>已完成</td><td>35%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>6</td><td>预览验收任务006</td><td>小林</td><td>计划中</td><td>42%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>7</td><td>预览验收任务007</td><td>小周</td><td>进行中</td><td>49%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>8</td><td>预览验收任务008</td><td>小陈</td><td>已完成</td><td>56%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>9</td><td>预览验收任务009</td><td>小林</td><td>计划中</td><td>63%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>10</td><td>预览验收任务010</td><td>小周</td><td>进行中</td><td>70%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>11</td><td>预览验收任务011</td><td>小陈</td><td>已完成</td><td>77%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>12</td><td>预览验收任务012</td><td>小林</td><td>计划中</td><td>84%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>13</td><td>预览验收任务013</td><td>小周</td><td>进行中</td><td>91%</td><td>8</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>14</td><td>预览验收任务014</td><td>小陈</td><td>已完成</td><td>98%</td><td>2</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>15</td><td>预览验收任务015</td><td>小林</td><td>计划中</td><td>4%</td><td>3</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>16</td><td>预览验收任务016</td><td>小周</td><td>进行中</td><td>11%</td><td>4</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>17</td><td>预览验收任务017</td><td>小陈</td><td>已完成</td><td>18%</td><td>5</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>18</td><td>预览验收任务018</td><td>小林</td><td>计划中</td><td>25%</td><td>6</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>19</td><td>预览验收任务019</td><td>小周</td><td>进行中</td><td>32%</td><td>7</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>20</td><td>预览验收任务020</td><td>小陈</td><td>已完成</td><td>39%</td><td>8</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>21</td><td>预览验收任务021</td><td>小林</td><td>计划中</td><td>46%</td><td>2</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>22</td><td>预览验收任务022</td><td>小周</td><td>进行中</td><td>53%</td><td>3</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>23</td><td>预览验收任务023</td><td>小陈</td><td>已完成</td><td>60%</td><td>4</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>24</td><td>预览验收任务024</td><td>小林</td><td>计划中</td><td>67%</td><td>5</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>25</td><td>预览验收任务025</td><td>小周</td><td>进行中</td><td>74%</td><td>6</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>26</td><td>预览验收任务026</td><td>小陈</td><td>已完成</td><td>81%</td><td>7</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>27</td><td>预览验收任务027</td><td>小林</td><td>计划中</td><td>88%</td><td>8</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>28</td><td>预览验收任务028</td><td>小周</td><td>进行中</td><td>95%</td><td>2</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>29</td><td>预览验收任务029</td><td>小陈</td><td>已完成</td><td>1%</td><td>3</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>30</td><td>预览验收任务030</td><td>小林</td><td>计划中</td><td>8%</td><td>4</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>31</td><td>预览验收任务031</td><td>小周</td><td>进行中</td><td>15%</td><td>5</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>32</td><td>预览验收任务032</td><td>小陈</td><td>已完成</td><td>22%</td><td>6</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>33</td><td>预览验收任务033</td><td>小林</td><td>计划中</td><td>29%</td><td>7</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>34</td><td>预览验收任务034</td><td>小周</td><td>进行中</td><td>36%</td><td>8</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>35</td><td>预览验收任务035</td><td>小陈</td><td>已完成</td><td>43%</td><td>2</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>36</td><td>预览验收任务036</td><td>小林</td><td>计划中</td><td>50%</td><td>3</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>37</td><td>预览验收任务037</td><td>小周</td><td>进行中</td><td>57%</td><td>4</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>38</td><td>预览验收任务038</td><td>小陈</td><td>已完成</td><td>64%</td><td>5</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>39</td><td>预览验收任务039</td><td>小林</td><td>计划中</td><td>71%</td><td>6</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>40</td><td>预览验收任务040</td><td>小周</td><td>进行中</td><td>78%</td><td>7</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>41</td><td>预览验收任务041</td><td>小陈</td><td>已完成</td><td>85%</td><td>8</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>42</td><td>预览验收任务042</td><td>小林</td><td>计划中</td><td>92%</td><td>2</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>43</td><td>预览验收任务043</td><td>小周</td><td>进行中</td><td>99%</td><td>3</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>44</td><td>预览验收任务044</td><td>小陈</td><td>已完成</td><td>5%</td><td>4</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>45</td><td>预览验收任务045</td><td>小林</td><td>计划中</td><td>12%</td><td>5</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>46</td><td>预览验收任务046</td><td>小周</td><td>进行中</td><td>19%</td><td>6</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>47</td><td>预览验收任务047</td><td>小陈</td><td>已完成</td><td>26%</td><td>7</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>48</td><td>预览验收任务048</td><td>小林</td><td>计划中</td><td>33%</td><td>8</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>49</td><td>预览验收任务049</td><td>小周</td><td>进行中</td><td>40%</td><td>2</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>50</td><td>预览验收任务050</td><td>小陈</td><td>已完成</td><td>47%</td><td>3</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>51</td><td>预览验收任务051</td><td>小林</td><td>计划中</td><td>54%</td><td>4</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>52</td><td>预览验收任务052</td><td>小周</td><td>进行中</td><td>61%</td><td>5</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>53</td><td>预览验收任务053</td><td>小陈</td><td>已完成</td><td>68%</td><td>6</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>54</td><td>预览验收任务054</td><td>小林</td><td>计划中</td><td>75%</td><td>7</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>55</td><td>预览验收任务055</td><td>小周</td><td>进行中</td><td>82%</td><td>8</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>56</td><td>预览验收任务056</td><td>小陈</td><td>已完成</td><td>89%</td><td>2</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>57</td><td>预览验收任务057</td><td>小林</td><td>计划中</td><td>96%</td><td>3</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>58</td><td>预览验收任务058</td><td>小周</td><td>进行中</td><td>2%</td><td>4</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>59</td><td>预览验收任务059</td><td>小陈</td><td>已完成</td><td>9%</td><td>5</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>60</td><td>预览验收任务060</td><td>小林</td><td>计划中</td><td>16%</td><td>6</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>61</td><td>预览验收任务061</td><td>小周</td><td>进行中</td><td>23%</td><td>7</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>62</td><td>预览验收任务062</td><td>小陈</td><td>已完成</td><td>30%</td><td>8</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>63</td><td>预览验收任务063</td><td>小林</td><td>计划中</td><td>37%</td><td>2</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>64</td><td>预览验收任务064</td><td>小周</td><td>进行中</td><td>44%</td><td>3</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>65</td><td>预览验收任务065</td><td>小陈</td><td>已完成</td><td>51%</td><td>4</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>66</td><td>预览验收任务066</td><td>小林</td><td>计划中</td><td>58%</td><td>5</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>67</td><td>预览验收任务067</td><td>小周</td><td>进行中</td><td>65%</td><td>6</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>68</td><td>预览验收任务068</td><td>小陈</td><td>已完成</td><td>72%</td><td>7</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>69</td><td>预览验收任务069</td><td>小林</td><td>计划中</td><td>79%</td><td>8</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>70</td><td>预览验收任务070</td><td>小周</td><td>进行中</td><td>86%</td><td>2</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>71</td><td>预览验收任务071</td><td>小陈</td><td>已完成</td><td>93%</td><td>3</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>72</td><td>预览验收任务072</td><td>小林</td><td>计划中</td><td>100%</td><td>4</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>73</td><td>预览验收任务073</td><td>小周</td><td>进行中</td><td>6%</td><td>5</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>74</td><td>预览验收任务074</td><td>小陈</td><td>已完成</td><td>13%</td><td>6</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>75</td><td>预览验收任务075</td><td>小林</td><td>计划中</td><td>20%</td><td>7</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>76</td><td>预览验收任务076</td><td>小周</td><td>进行中</td><td>27%</td><td>8</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>77</td><td>预览验收任务077</td><td>小陈</td><td>已完成</td><td>34%</td><td>2</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>78</td><td>预览验收任务078</td><td>小林</td><td>计划中</td><td>41%</td><td>3</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>79</td><td>预览验收任务079</td><td>小周</td><td>进行中</td><td>48%</td><td>4</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>80</td><td>预览验收任务080</td><td>小陈</td><td>已完成</td><td>55%</td><td>5</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>81</td><td>预览验收任务081</td><td>小林</td><td>计划中</td><td>62%</td><td>6</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>82</td><td>预览验收任务082</td><td>小周</td><td>进行中</td><td>69%</td><td>7</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>83</td><td>预览验收任务083</td><td>小陈</td><td>已完成</td><td>76%</td><td>8</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>84</td><td>预览验收任务084</td><td>小林</td><td>计划中</td><td>83%</td><td>2</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>85</td><td>预览验收任务085</td><td>小周</td><td>进行中</td><td>90%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>86</td><td>预览验收任务086</td><td>小陈</td><td>已完成</td><td>97%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>87</td><td>预览验收任务087</td><td>小林</td><td>计划中</td><td>3%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>88</td><td>预览验收任务088</td><td>小周</td><td>进行中</td><td>10%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>89</td><td>预览验收任务089</td><td>小陈</td><td>已完成</td><td>17%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>90</td><td>预览验收任务090</td><td>小林</td><td>计划中</td><td>24%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>91</td><td>预览验收任务091</td><td>小周</td><td>进行中</td><td>31%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>92</td><td>预览验收任务092</td><td>小陈</td><td>已完成</td><td>38%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>93</td><td>预览验收任务093</td><td>小林</td><td>计划中</td><td>45%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>94</td><td>预览验收任务094</td><td>小周</td><td>进行中</td><td>52%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>95</td><td>预览验收任务095</td><td>小陈</td><td>已完成</td><td>59%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>96</td><td>预览验收任务096</td><td>小林</td><td>计划中</td><td>66%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>97</td><td>预览验收任务097</td><td>小周</td><td>进行中</td><td>73%</td><td>8</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>98</td><td>预览验收任务098</td><td>小陈</td><td>已完成</td><td>80%</td><td>2</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>99</td><td>预览验收任务099</td><td>小林</td><td>计划中</td><td>87%</td><td>3</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>100</td><td>预览验收任务100</td><td>小周</td><td>进行中</td><td>94%</td><td>4</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>101</td><td>预览验收任务101</td><td>小陈</td><td>已完成</td><td>0%</td><td>5</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>102</td><td>预览验收任务102</td><td>小林</td><td>计划中</td><td>7%</td><td>6</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>103</td><td>预览验收任务103</td><td>小周</td><td>进行中</td><td>14%</td><td>7</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>104</td><td>预览验收任务104</td><td>小陈</td><td>已完成</td><td>21%</td><td>8</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>105</td><td>预览验收任务105</td><td>小林</td><td>计划中</td><td>28%</td><td>2</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>106</td><td>预览验收任务106</td><td>小周</td><td>进行中</td><td>35%</td><td>3</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>107</td><td>预览验收任务107</td><td>小陈</td><td>已完成</td><td>42%</td><td>4</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>108</td><td>预览验收任务108</td><td>小林</td><td>计划中</td><td>49%</td><td>5</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>109</td><td>预览验收任务109</td><td>小周</td><td>进行中</td><td>56%</td><td>6</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>110</td><td>预览验收任务110</td><td>小陈</td><td>已完成</td><td>63%</td><td>7</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>111</td><td>预览验收任务111</td><td>小林</td><td>计划中</td><td>70%</td><td>8</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>112</td><td>预览验收任务112</td><td>小周</td><td>进行中</td><td>77%</td><td>2</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>113</td><td>预览验收任务113</td><td>小陈</td><td>已完成</td><td>84%</td><td>3</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>114</td><td>预览验收任务114</td><td>小林</td><td>计划中</td><td>91%</td><td>4</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>115</td><td>预览验收任务115</td><td>小周</td><td>进行中</td><td>98%</td><td>5</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>116</td><td>预览验收任务116</td><td>小陈</td><td>已完成</td><td>4%</td><td>6</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>117</td><td>预览验收任务117</td><td>小林</td><td>计划中</td><td>11%</td><td>7</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>118</td><td>预览验收任务118</td><td>小周</td><td>进行中</td><td>18%</td><td>8</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>119</td><td>预览验收任务119</td><td>小陈</td><td>已完成</td><td>25%</td><td>2</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>120</td><td>预览验收任务120</td><td>小林</td><td>计划中</td><td>32%</td><td>3</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>121</td><td>预览验收任务121</td><td>小周</td><td>进行中</td><td>39%</td><td>4</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>122</td><td>预览验收任务122</td><td>小陈</td><td>已完成</td><td>46%</td><td>5</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>123</td><td>预览验收任务123</td><td>小林</td><td>计划中</td><td>53%</td><td>6</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>124</td><td>预览验收任务124</td><td>小周</td><td>进行中</td><td>60%</td><td>7</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>125</td><td>预览验收任务125</td><td>小陈</td><td>已完成</td><td>67%</td><td>8</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>126</td><td>预览验收任务126</td><td>小林</td><td>计划中</td><td>74%</td><td>2</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>127</td><td>预览验收任务127</td><td>小周</td><td>进行中</td><td>81%</td><td>3</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>128</td><td>预览验收任务128</td><td>小陈</td><td>已完成</td><td>88%</td><td>4</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>129</td><td>预览验收任务129</td><td>小林</td><td>计划中</td><td>95%</td><td>5</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>130</td><td>预览验收任务130</td><td>小周</td><td>进行中</td><td>1%</td><td>6</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>131</td><td>预览验收任务131</td><td>小陈</td><td>已完成</td><td>8%</td><td>7</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>132</td><td>预览验收任务132</td><td>小林</td><td>计划中</td><td>15%</td><td>8</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>133</td><td>预览验收任务133</td><td>小周</td><td>进行中</td><td>22%</td><td>2</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>134</td><td>预览验收任务134</td><td>小陈</td><td>已完成</td><td>29%</td><td>3</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>135</td><td>预览验收任务135</td><td>小林</td><td>计划中</td><td>36%</td><td>4</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>136</td><td>预览验收任务136</td><td>小周</td><td>进行中</td><td>43%</td><td>5</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>137</td><td>预览验收任务137</td><td>小陈</td><td>已完成</td><td>50%</td><td>6</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>138</td><td>预览验收任务138</td><td>小林</td><td>计划中</td><td>57%</td><td>7</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>139</td><td>预览验收任务139</td><td>小周</td><td>进行中</td><td>64%</td><td>8</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>140</td><td>预览验收任务140</td><td>小陈</td><td>已完成</td><td>71%</td><td>2</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>141</td><td>预览验收任务141</td><td>小林</td><td>计划中</td><td>78%</td><td>3</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>142</td><td>预览验收任务142</td><td>小周</td><td>进行中</td><td>85%</td><td>4</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>143</td><td>预览验收任务143</td><td>小陈</td><td>已完成</td><td>92%</td><td>5</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>144</td><td>预览验收任务144</td><td>小林</td><td>计划中</td><td>99%</td><td>6</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>145</td><td>预览验收任务145</td><td>小周</td><td>进行中</td><td>5%</td><td>7</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>146</td><td>预览验收任务146</td><td>小陈</td><td>已完成</td><td>12%</td><td>8</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>147</td><td>预览验收任务147</td><td>小林</td><td>计划中</td><td>19%</td><td>2</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>148</td><td>预览验收任务148</td><td>小周</td><td>进行中</td><td>26%</td><td>3</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>149</td><td>预览验收任务149</td><td>小陈</td><td>已完成</td><td>33%</td><td>4</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>150</td><td>预览验收任务150</td><td>小林</td><td>计划中</td><td>40%</td><td>5</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>151</td><td>预览验收任务151</td><td>小周</td><td>进行中</td><td>47%</td><td>6</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>152</td><td>预览验收任务152</td><td>小陈</td><td>已完成</td><td>54%</td><td>7</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>153</td><td>预览验收任务153</td><td>小林</td><td>计划中</td><td>61%</td><td>8</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>154</td><td>预览验收任务154</td><td>小周</td><td>进行中</td><td>68%</td><td>2</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>155</td><td>预览验收任务155</td><td>小陈</td><td>已完成</td><td>75%</td><td>3</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>156</td><td>预览验收任务156</td><td>小林</td><td>计划中</td><td>82%</td><td>4</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>157</td><td>预览验收任务157</td><td>小周</td><td>进行中</td><td>89%</td><td>5</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>158</td><td>预览验收任务158</td><td>小陈</td><td>已完成</td><td>96%</td><td>6</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>159</td><td>预览验收任务159</td><td>小林</td><td>计划中</td><td>2%</td><td>7</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>160</td><td>预览验收任务160</td><td>小周</td><td>进行中</td><td>9%</td><td>8</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>161</td><td>预览验收任务161</td><td>小陈</td><td>已完成</td><td>16%</td><td>2</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>162</td><td>预览验收任务162</td><td>小林</td><td>计划中</td><td>23%</td><td>3</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>163</td><td>预览验收任务163</td><td>小周</td><td>进行中</td><td>30%</td><td>4</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>164</td><td>预览验收任务164</td><td>小陈</td><td>已完成</td><td>37%</td><td>5</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>165</td><td>预览验收任务165</td><td>小林</td><td>计划中</td><td>44%</td><td>6</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>166</td><td>预览验收任务166</td><td>小周</td><td>进行中</td><td>51%</td><td>7</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>167</td><td>预览验收任务167</td><td>小陈</td><td>已完成</td><td>58%</td><td>8</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>168</td><td>预览验收任务168</td><td>小林</td><td>计划中</td><td>65%</td><td>2</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>169</td><td>预览验收任务169</td><td>小周</td><td>进行中</td><td>72%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>170</td><td>预览验收任务170</td><td>小陈</td><td>已完成</td><td>79%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>171</td><td>预览验收任务171</td><td>小林</td><td>计划中</td><td>86%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>172</td><td>预览验收任务172</td><td>小周</td><td>进行中</td><td>93%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>173</td><td>预览验收任务173</td><td>小陈</td><td>已完成</td><td>100%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>174</td><td>预览验收任务174</td><td>小林</td><td>计划中</td><td>6%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>175</td><td>预览验收任务175</td><td>小周</td><td>进行中</td><td>13%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>176</td><td>预览验收任务176</td><td>小陈</td><td>已完成</td><td>20%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>177</td><td>预览验收任务177</td><td>小林</td><td>计划中</td><td>27%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>178</td><td>预览验收任务178</td><td>小周</td><td>进行中</td><td>34%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>179</td><td>预览验收任务179</td><td>小陈</td><td>已完成</td><td>41%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>180</td><td>预览验收任务180</td><td>小林</td><td>计划中</td><td>48%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n</tbody></table>\n<h2>验收汇总</h2>\n<table><thead><tr><th>文件类型</th><th>布局检查</th><th>交互检查</th><th>样例数量</th></tr></thead><tbody>\n<tr><td>Word</td><td>标题与表格</td><td>文档滚动</td><td>1</td></tr>\n<tr><td>PowerPoint</td><td>背景与色块</td><td>幻灯片翻页</td><td>3</td></tr>\n<tr><td>Excel</td><td>列宽与样式</td><td>工作表切换</td><td>2</td></tr>\n</tbody></table>\n<h2>Chart 1</h2>\n<p>Title: 工时对比\nSeries: Series 1\nSeries: Series 2</p>\n",
+      "encrypted": false
     }
   },
   "pairing_ticket": {
@@ -3134,12 +3174,12 @@
     "crates/node/src/files.rs": "63a1097f8cba5987f00a2dfdcabd0f7da151b5d3dbb0b6fb9ae652e8cf8c407c",
     "crates/node/src/list.rs": "9795b6a2daeb934250b1c41fd83df1a03e6ccc459a0ed4c316fd5e45229a989f",
     "crates/node/src/preview.rs": "cbf63f7aa0045eae6523fd568808724734fac191a9cd7dbf95c5e62f645df853",
-    "apps/gui/core/src/bin/lab_data.rs": "a7307c1c0627ef81c85b8a47eee1d00f3b3503b83c60c8f51baffc21ff42717a",
+    "apps/gui/core/src/bin/lab_data.rs": "0b53f703a80ec7895fc1fb9cf79b7809c4e2eba168833fa0edc9780151ef636e",
     "apps/gui/core/src/qr.rs": "9e1bd73fcdd6e7afe7bf5d2d71c8551e139562e53c4ced190cef6d9dcc0f07dd",
     "apps/gui/core/src/lib.rs": "7ccd00c0745a7f005a10713e26073f7be1b13e98db019940d3a089430ec445af",
     "crates/node/src/config.rs": "290caa516b1634a98f32e0db63bc00b3b2ce5ade93405c60a5040851ced6f663",
-    "crates/catalog/zh.toml": "f86afe5711168038a2f89972016b559adb61b0f5321b5a1e89d4ec224fde90f7",
-    "crates/catalog/en.toml": "6a5777aeeac12034aa336aac108aa3b9d6eb4325909eb5f2e1b6cc709068275f",
+    "crates/catalog/zh.toml": "a6a2e52ba18f560ad6096f8991614f28e80559ce627641a8e4205dc038afe9e3",
+    "crates/catalog/en.toml": "5fa3f5d5f26a47824ddd77ce882b20777e2f4c123a17c081afb162cf6f12be80",
     "apps/gui/dev/lab/data/workspace/.config/preferences.json": "d15be58e7eb7f9813a8f87e0f093475bdaeb61a22917641168ced318ca61b2e2",
     "apps/gui/dev/lab/data/workspace/.gitignore": "4d56952b0fb13bf8f9b6c13a6d4c34a075bac3af447636a1df4335d7576e2f97",
     "apps/gui/dev/lab/data/workspace/README.md": "ad36cf9e020c9284bdaa4987ebd05a1cb9187acaad651956ac8ffec8622b573d",
@@ -3155,9 +3195,10 @@
     "apps/gui/dev/lab/data/workspace/media/preview.html": "181c701e4758e890648d31d00e11cce8e128568959b01290fe4977633f545f7d",
     "apps/gui/dev/lab/data/workspace/media/style.css": "bfeb1d03be3e326f83b93386d2c0393bde50c2ef2e0cb8d506990c4987ce2a20",
     "apps/gui/dev/lab/data/workspace/notes.md": "5de2c9ce72d960bf66a6c1c99d8fea3ddc9396a840de3c01eb8e11b15fbb4c30",
-    "apps/gui/dev/lab/data/workspace/office/阶段汇报.pptx": "c54cd46987467e8f14ad17b91619a434c8a1095aad0ea4c9fdccdeca7f38131d",
-    "apps/gui/dev/lab/data/workspace/office/项目周报.docx": "735d7523112df1d38910d45df22483f390905aff63b6644d87b65e5a8cbef9b7",
-    "apps/gui/dev/lab/data/workspace/office/验收台账.xlsx": "63dc2e14306a8a630935e533562d0c1c237669c62a8f20c53bb94c80be2093e9",
+    "apps/gui/dev/lab/data/workspace/office/加密周报.docx": "8b9646829f49889f04790aa1f03b54d80a076dd4b6ab758a35ee0a248a3dee0c",
+    "apps/gui/dev/lab/data/workspace/office/阶段汇报.pptx": "506cdd9d6d7bd2935c6554f0de4b2e7ba32133e7fc3ff1caff1d6cddb461599c",
+    "apps/gui/dev/lab/data/workspace/office/项目周报.docx": "e530efdcffd1790c55514e52bc28422846cccb7ab874b05d8f50eecbe9bd47e5",
+    "apps/gui/dev/lab/data/workspace/office/验收台账.xlsx": "8a3696bfb06a8a77594a86d3a7cbafee40f5c9f6086d86d5a24d79a7090ae075",
     "apps/gui/dev/lab/data/workspace/package.json": "532e45105028b94a968e65fb3c12ca69febc4799876569b52ebf33ee12f67862",
     "apps/gui/dev/lab/data/workspace/plan.md": "458fbdc195ca00903530c1d0c943564de907a0d9b2778f034728b134377d0765",
     "apps/gui/dev/lab/data/workspace/report.md": "16d0fe5faa9ab3e651ebada07a31d562616ba4c3710f3ac290ef120037981335",
@@ -3165,5 +3206,5 @@
     "apps/gui/dev/lab/data/workspace/src/app.ts": "aa86c4f80a12ab65cd5ef6b71aae1636d7186648222e06f1e2b18a3dcac4ef05",
     "apps/gui/dev/lab/data/workspace/src/navigation.ts": "aaeff633369c4afdbb21c8b53096d13afa98efa1b99bee609e05c6d8bcc07d0a"
   },
-  "_payload_sha256": "9e83490f7da7e99787a05cdf8fe9fedd28eb2391ec387f90032c7130ba3ddeca"
+  "_payload_sha256": "179aaf6e1400f928eed4f6df87783991f0c13ad0be61228038035fbe96eb7cb4"
 }

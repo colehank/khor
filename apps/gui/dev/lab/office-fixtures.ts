@@ -12,5 +12,5 @@ export async function officeFixturePreview(file: string, raw: boolean) {
   const response = await fetch(base+'/assets/preview-fixtures/'+file.split('/').map(encodeURIComponent).join('/'));
   if (!response.ok) throw new Error('Office Lab sample is missing');
   const bytes = new Uint8Array(await response.arrayBuffer());
-  return {...preview, data:btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')), html:''};
+  return {...preview, empty:bytes.length===0, data:btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')), html:''};
 }

@@ -42,7 +42,7 @@ def validate(data):
         raise ValueError('Lab file records are incomplete')
     office = data.get('office_previews', {})
     if {Path(name).suffix for name in office} != {'.docx', '.pptx', '.xlsx'} or not all(
-            item.get('html') and item.get('total', 0) > 0 for item in office.values()):
+            (item.get('html') or item.get('encrypted')) and item.get('total', 0) > 0 for item in office.values()):
         raise ValueError('Lab Office fixtures require generated text for all three formats')
     ticket = data.get('pairing_ticket')
     if (not isinstance(ticket, dict) or not isinstance(ticket.get('token'), str)

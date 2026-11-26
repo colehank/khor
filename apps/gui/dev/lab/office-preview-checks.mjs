@@ -8,6 +8,12 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
   const name = `office-preview-${engine}-${width}`;
   const mobile = width < 500;
   const context = await browser.newContext({viewport:{width,height:mobile?844:900}, isMobile:mobile, hasTouch:mobile});
+  await context.addInitScript(() => {
+    window.officeCopied = "";
+    Object.defineProperty(navigator,'clipboard',{configurable:true,value:{
+      writeText: async text => { window.officeCopied = text; },
+    }});
+  });
   const page = await context.newPage();
   const errors = [];
   const origin = `http://127.0.0.1:${port}`;
@@ -21,8 +27,8 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
   });
   const environment = {platform:'desktop',theme:'dark',material:'frost',opacity:60,
     background:'dark',keyboard:0,safeTop:0,safeBottom:0};
-  const open = format => page.goto(origin+'/app/?scene=workspace&machines=1&theme=dark'+
-    '&file='+encodeURIComponent('office/'+files[format])+
+  const open = (format, file = files[format]) => page.goto(origin+'/app/?scene=workspace&machines=1&theme=dark'+
+    '&file='+encodeURIComponent('office/'+file)+
     (mobile ? '' : '&environment='+encodeURIComponent(JSON.stringify(environment))));
   const ready = async format => {
     const viewer = page.locator(`[data-office-preview="${format}"][data-ready]`);
@@ -38,6 +44,27 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     return viewer;
   };
   const text = page.locator('[data-look="doc"]:visible');
+  const openMenu = async key => {
+    await page.locator('[data-file-more]:visible').click();
+    await page.locator(`[data-file-more-item="${key}"]`).press('Enter');
+    await page.locator('[data-file-more-menu]').waitFor({state:'detached'});
+  };
+  const dialog = () => page.getByRole('dialog').last();
+  const closePanel = async () => {
+    await dialog().getByRole('button',{name:/^关闭$|^Close$/i}).click();
+    await page.getByRole('dialog').waitFor({state:'detached'});
+  };
+  const search = async value => {
+    await page.locator('[data-office-find-open]:visible').click();
+    const field = page.getByRole('searchbox',{name:/搜索此文件|Search this file/i});
+    await field.fill(value);
+    await page.waitForFunction(() => {
+      const count = document.querySelector('[data-office-find-count]')?.textContent;
+      return count && (/\d+ \/ \d+/.test(count) || /没有匹配项|No matches/i.test(count));
+    });
+    return field;
+  };
+  const searchCount = () => page.locator('[data-office-find-count]').innerText();
   const visibleCanvas = viewer => viewer.locator('canvas').first();
   const image = viewer => visibleCanvas(viewer).evaluate(canvas => {
     const {width,height} = canvas;
@@ -88,6 +115,31 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     }
     assert(await scrollWord(word,null)>0,'A multi-page Word document scrolls inside the pane');
     await page.screenshot({path:path.join(report,name+'-word.png')});
+    const searchWord = await search('验收');
+    assert.match(await searchCount(), /1 \/ [2-9]|1 \/ \d{2,}/,'Word starts at the first match');
+    await page.locator('[data-office-find]').getByRole('button',{name:/下一个|Next match/i}).click();
+    await page.waitForFunction(() => document.querySelector('[data-office-find-count]')?.textContent?.startsWith('2 /'));
+    await searchWord.press('Escape');
+    await page.locator('[data-office-find]').waitFor({state:'detached'});
+
+    await openMenu('office-comments');
+    await dialog().getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
+    await page.screenshot({path:path.join(report,name+'-word-comments.png'), animations:'disabled'});
+    await closePanel();
+    await openMenu('office-revisions');
+    await word.getByText('联调尚未开始。',{exact:true}).waitFor({state:'attached'});
+    const change = await search('联调尚未开始');
+    assert.match(await searchCount(),/1 \/ 1/,'The deletion is findable with revision markup');
+    await change.press('Escape');
+
+    await openMenu('office-pages');
+    await dialog().locator('[data-office-thumbnail="2"] canvas').waitFor();
+    await page.waitForFunction(() => {
+      const thumbnail = document.querySelector('[data-office-thumbnail="2"] canvas');
+      return thumbnail instanceof HTMLCanvasElement && thumbnail.width > 80;
+    });
+    await dialog().locator('[data-office-thumbnail="2"]').click();
+    await page.getByRole('dialog').waitFor({state:'detached'});
 
     if (mobile) await open('pptx');
     else await page.locator('[data-file-path$="/'+files.pptx+'"]').click();
@@ -95,6 +147,12 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     assert.equal(await slides.evaluate(viewer=>getComputedStyle(viewer).maskImage),'none',
       'A presentation that does not scroll has no top fade');
     assert.match(await slides.textContent(),/1 \/ 3/);
+    await openMenu('office-notes');
+    await dialog().getByText(/先介绍项目目标/).waitFor();
+    await closePanel();
+    await openMenu('office-comments');
+    await dialog().getByText('在第一页强调验收目标。',{exact:true}).waitFor();
+    await closePanel();
     await slides.getByRole('button',{name:/下一页|Next page/i}).click();
     await slides.getByText('2 / 3',{exact:true}).waitFor();
     assert.match((await slides.textContent()).replace(/\s+/g,''),/阶段进度/);
@@ -102,11 +160,30 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const pane = await slides.boundingBox();
     assert(slideRect.width <= pane.width + 1 && slideRect.height < pane.height,'The slide fits the pane');
     await page.screenshot({path:path.join(report,name+'-powerpoint.png')});
+    await openMenu('office-pages');
+    await dialog().locator('[data-office-thumbnail="3"]').click();
+    await slides.getByText('3 / 3',{exact:true}).waitFor();
+    await openMenu('office-zoom-in');
+    await page.waitForFunction(initial => {
+      const canvas = document.querySelector('[data-office-preview="pptx"] canvas');
+      return canvas && canvas.getBoundingClientRect().width > initial;
+    },slideRect.width);
+    await openMenu('office-fit-page');
 
     if (mobile) await open('xlsx');
     else await page.locator('[data-file-path$="/'+files.xlsx+'"]').click();
     const excel = await ready('xlsx');
     const firstSheet = await image(excel);
+    await openMenu('office-comments');
+    await dialog().getByText('这里记录第一项验收内容。',{exact:true}).waitFor();
+    await closePanel();
+    const searchCells = await search('预览验收任务 001');
+    assert.match(await searchCount(),/\d+ \/ \d+/);
+    await searchCells.press('Escape');
+    const sheetGrid = await visibleCanvas(excel).boundingBox();
+    await page.mouse.click(sheetGrid.x+100,sheetGrid.y+42);
+    await openMenu('office-copy');
+    await page.waitForFunction(() => window.officeCopied.trim().length > 0);
     if (!mobile) {
       const mask = () => excel.evaluate(viewer=>getComputedStyle(viewer).maskImage);
       const waitForScroll = scrolled => page.waitForFunction(expected => {
@@ -132,6 +209,16 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     },firstSheet[2]);
     await page.screenshot({path:path.join(report,name+'-excel.png')});
     assert.equal(officeAssets.length,3,'Each renderer requests its original once');
+    await open('docx','加密周报.docx');
+    const unlock = page.locator('[data-office-unlock]');
+    await unlock.waitFor();
+    const password = unlock.locator('input[type="password"]');
+    await password.fill('wrong-password');
+    await unlock.getByRole('button',{name:'解锁文档'}).click();
+    await unlock.getByText('文档密码不正确',{exact:true}).waitFor();
+    await password.fill('khor-lab');
+    await unlock.getByRole('button',{name:'解锁文档'}).click();
+    await ready('docx');
     assert.deepEqual(foreign,[], 'Preview, including fonts, stays on the Lab origin');
 
     await page.route(/_parser_bg[^/]*\.wasm(?:\?|$)/, route =>
