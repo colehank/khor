@@ -22,6 +22,12 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const viewer = page.locator(`[data-office-preview="${format}"][data-ready]`);
     await viewer.waitFor({timeout:20_000});
     await viewer.locator('canvas').first().waitFor();
+    if (!mobile) {
+      const chrome = await page.locator('[data-ws-mid] [data-tab-bar]').boundingBox();
+      const document = await viewer.boundingBox();
+      assert(document.y >= chrome.y + chrome.height - 0.5,
+        `Office content must not paint behind the shared tab capsule (${format}: ${document.y}, chrome bottom: ${chrome.y + chrome.height})`);
+    }
     return viewer;
   };
   const visibleCanvas = viewer => viewer.locator('canvas').first();

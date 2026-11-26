@@ -68,6 +68,9 @@ function topScroller(under: HTMLElement): HTMLElement | null {
   const top = layoutTop(under);
   let at: HTMLElement | null = under;
   for (let depth = 0; at && depth < 12; depth++) {
+    // Embedded viewers own the entire viewport below the title. Their
+    // internal scrollers must not pull their document paper behind it.
+    if (at.hasAttribute('data-band-boundary')) return null;
     if (scrolls(at)) return at;
     let next: HTMLElement | null = null;
     for (const c of at.children) {

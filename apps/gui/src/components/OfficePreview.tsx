@@ -122,7 +122,7 @@ export function OfficePreview({ format, source, onFallback }: {
     };
   }, [format, source]);
 
-  return <div data-office-preview={format} data-ready={ready || undefined}
+  return <div data-office-preview={format} data-band-boundary data-ready={ready || undefined}
     className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <div className="relative min-h-0 flex-1 overflow-hidden">
       <div ref={mount} className={format === "pptx" ?
