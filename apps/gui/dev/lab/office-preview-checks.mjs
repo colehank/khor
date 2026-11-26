@@ -158,8 +158,13 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await slides.getByText('2 / 3',{exact:true}).waitFor();
     assert.match((await slides.textContent()).replace(/\s+/g,''),/阶段进度/);
     const slideRect = await visibleCanvas(slides).boundingBox();
-    const pane = await slides.boundingBox();
-    assert(slideRect.width <= pane.width + 1 && slideRect.height < pane.height,'The slide fits the pane');
+    const pane = await slides.locator('[data-office-document]').boundingBox();
+    assert(slideRect.width <= pane.width + 1 && slideRect.height <= pane.height + 1,'The slide fits the pane');
+    const left = slideRect.x - pane.x;
+    const right = pane.x + pane.width - slideRect.x - slideRect.width;
+    const top = slideRect.y - pane.y;
+    const bottom = pane.y + pane.height - slideRect.y - slideRect.height;
+    assert(Math.abs(left - right) < 1.5 && Math.abs(top - bottom) < 1.5,'The slide is centered in the document area');
     await page.screenshot({path:path.join(report,name+'-powerpoint.png')});
     await tool('office-pages');
     await dialog().locator('[data-office-thumbnail="3"]').click();
