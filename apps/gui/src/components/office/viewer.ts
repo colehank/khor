@@ -1,5 +1,6 @@
 import type { OfficeFormat } from "@/components/OfficePreview";
 import type { OfficeCommentAnchor, OfficeNavigation, OfficePages, OfficeThread, WordReviewEntry, WordReviewPoint, WordReviewSource } from "@/components/office/types";
+import { gui } from "@/gen/catalog";
 import { visiblePageOwner } from "@/lib/native-page-yield";
 import type { PptxComment, PptxPresentation } from "@silurus/ooxml/pptx";
 import type { DefinedName } from "@silurus/ooxml/xlsx";
@@ -333,15 +334,37 @@ export async function loadOfficeReader(
         if (target.index !== index) await sheets.goToSheet(target.index);
         if (!signal.aborted) await sheets.scrollToCell(target.ref);
       };
+      let syncSheetArrows: ((index: number, count: number) => void) | undefined;
       const sheets = XlsxViewer.fromWorkbook(host, workbook, {
         ...actions, showZoomSlider: false, comments: false,
-        onSheetChange: (index, count) => position({ index, count }),
+        onSheetChange: (index, count) => {
+          syncSheetArrows?.(index, count);
+          position({ index, count });
+        },
         onHyperlinkClick: (target: LinkTarget) => {
           if (target.kind === "external") externalLink(target.url);
           else void followCell(target.ref).catch(error);
         },
       });
       viewer = sheets;
+      // Keep the vendor tabs and their sheet list. Replace the primary
+      // action of the two tab-strip arrows with worksheet navigation.
+      const arrows = [...host.querySelectorAll<HTMLButtonElement>("[data-xlsx-tab-nav]")].map(button => {
+        const previous = button.dataset.xlsxTabNav === "prev";
+        const label = previous ? gui.office_sheet_previous : gui.office_sheet_next;
+        button.title = label;
+        button.setAttribute("aria-label", label);
+        button.addEventListener("click", event => {
+          event.stopImmediatePropagation();
+          if (button.disabled || signal.aborted) return;
+          void (previous ? sheets.prevSheet() : sheets.nextSheet()).catch(error);
+        }, { capture: true, signal });
+        return { button, previous };
+      });
+      syncSheetArrows = (index, count) => {
+        for (const { button, previous } of arrows) button.disabled = previous ? index <= 0 : index + 1 >= count;
+      };
+      syncSheetArrows(sheets.sheetIndex, sheets.sheetCount);
       const document = host.ownerDocument;
       const nativeCopy = (event: ClipboardEvent) => {
         const focus = document.activeElement;

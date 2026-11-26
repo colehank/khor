@@ -373,6 +373,15 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     if (mobile) await open('xlsx');
     else await page.locator('[data-file-path$="/'+files.xlsx+'"]').click();
     const excel = await ready('xlsx');
+    const previousSheet = excel.getByRole('button',{name:'上一张工作表',exact:true});
+    const nextSheet = excel.getByRole('button',{name:'下一张工作表',exact:true});
+    const checkSheetArrows = index => page.waitForFunction(index => {
+      const previous = document.querySelector('[data-xlsx-tab-nav="prev"]');
+      const next = document.querySelector('[data-xlsx-tab-nav="next"]');
+      return previous?.disabled === (index === 0) && next?.disabled === (index === 1) &&
+        getComputedStyle(index === 0 ? next : previous).pointerEvents === 'auto';
+    },index,{timeout:5000});
+    await checkSheetArrows(0);
     const firstSheet = await image(excel);
     const cellComments = await rightComments(excel);
     await cellComments.getByText('这里记录第一项验收内容。',{exact:true}).waitFor();
@@ -413,11 +422,21 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       await waitForScroll(false);
       assert.equal(await mask(),'none','Returning to the first row keeps the worksheet clear');
     }
-    await excel.getByText('验收汇总',{exact:true}).click();
-    await page.waitForFunction(before => {
+    const waitForSheetPaint = before => page.waitForFunction(before => {
       const canvas = document.querySelector('[data-office-preview="xlsx"] canvas');
       return canvas && canvas.toDataURL() !== before;
-    },firstSheet[2]);
+    },before);
+    await excel.getByText('验收汇总',{exact:true}).click();
+    await checkSheetArrows(1);
+    await waitForSheetPaint(firstSheet[2]);
+    const summarySheet = await image(excel);
+    await previousSheet.click();
+    await checkSheetArrows(0);
+    await waitForSheetPaint(summarySheet[2]);
+    const restoredSheet = await image(excel);
+    await nextSheet.click();
+    await checkSheetArrows(1);
+    await waitForSheetPaint(restoredSheet[2]);
     await page.screenshot({path:path.join(report,name+'-excel.png')});
     assert.equal(officeAssets.length,3,'Each renderer requests its original once');
     await open('docx','加密周报.docx');

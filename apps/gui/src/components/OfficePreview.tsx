@@ -333,7 +333,9 @@ export function OfficePreview({ format, source, onFallback }: {
           <div className="relative flex min-h-0 min-w-0 flex-1">
             <div data-office-document
               className={cn("relative min-h-0 min-w-0 flex-1 overflow-hidden",
-              format === "docx" && "[&_[data-overlay=comment-marker]]:invisible")}>
+              format === "docx" && "[&_[data-overlay=comment-marker]]:invisible",
+              format === "xlsx" && "[&_[data-xlsx-tab-nav]:enabled]:pointer-events-auto! [&_[data-xlsx-tab-nav]:enabled]:opacity-100!",
+              format === "xlsx" && "[&_[data-xlsx-tab-nav]:disabled]:pointer-events-none! [&_[data-xlsx-tab-nav]:disabled]:opacity-30!")}>
               <div ref={mount} className={format === "pptx" ?
                 "absolute inset-0 flex overflow-auto select-text [&>*]:m-auto [&>*]:shrink-0" :
                 "absolute inset-0 overflow-hidden select-text"}/>
