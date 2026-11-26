@@ -78,7 +78,7 @@ enum Want {
 
 /// How long after the first road a pair may take to go direct: iroh
 /// starts a round at once and again every 60 s (`UPGRADE_INTERVAL`).
-const PUNCH: Duration = Duration::from_secs(75);
+pub(super) const PUNCH: Duration = Duration::from_secs(75);
 
 /// The longest a dial may take before it counts as stuck.
 const STUCK: u64 = 10_000;
