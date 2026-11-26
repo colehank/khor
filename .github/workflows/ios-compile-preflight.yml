@@ -1,4 +1,4 @@
-name: iOS compile preflight
+name: iOS archive preflight
 on:
   push:
     branches: [verify/ios-rustix-compile]
@@ -11,10 +11,10 @@ env:
 jobs:
   frontend:
     uses: ./.github/workflows/frontend.yml
-  ios-compile:
+  ios-archive:
     needs: frontend
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 95
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: ./.github/actions/restore-frontend
@@ -22,9 +22,13 @@ jobs:
         with:
           target: aarch64-apple-ios
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
-      - name: Check the iPhone app target with its locked release dependencies
+      - run: npm ci --prefix apps/gui
+      - name: Archive the complete iPhone app without signing or uploading
+        run: python3 scripts/apple_release.py ios-build --signed false
+      - name: Verify the resolved system library in the archived executable
         shell: bash
         run: |
-          export SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
-          export IPHONEOS_DEPLOYMENT_TARGET=15.0
-          cargo check --locked -p khor-gui --target aarch64-apple-ios --features tauri/custom-protocol --lib
+          app=apps/gui/src-tauri/gen/apple/build/khor-gui_iOS.xcarchive/Products/Applications/Khor.app/Khor
+          test -f "$app"
+          test "$(xcrun lipo -archs "$app")" = arm64
+          xcrun otool -L "$app" | grep -F /usr/lib/libresolv.9.dylib
