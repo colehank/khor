@@ -964,7 +964,10 @@ pub async fn preview(
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| {
-                matches!(extension.to_ascii_lowercase().as_str(), "docx" | "pptx" | "xlsx")
+                matches!(
+                    extension.to_ascii_lowercase().as_str(),
+                    "docx" | "pptx" | "xlsx"
+                )
             });
     let (total, _, bytes, cut) = if office_bytes {
         n.read_complete(machine, path, 16 * 1024 * 1024).await?
