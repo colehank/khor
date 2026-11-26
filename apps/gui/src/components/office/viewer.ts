@@ -244,9 +244,18 @@ export async function loadOfficeReader(
             for (const { root, replies, anchors } of resolveDocxCommentThreads(
               document.comments, document.commentAnchorRanges(), runs, { includeResolved: true },
             )) {
-              const points = anchors.flatMap(anchor => anchor.rects.map(rect => point(rect)));
+              const ranges = anchors.flatMap(anchor => anchor.rects.map(rect => {
+                // Silurus positions the rectangle first and rotates it around
+                // its top-left corner, the same origin as the text layer.
+                const matrix = rect.transform ? new DOMMatrix(rect.transform) : undefined;
+                return [[0, 0], [rect.width, 0], [rect.width, rect.height], [0, rect.height]].map(([x, y]) => {
+                  const corner = matrix?.transformPoint({ x, y }) ?? { x, y };
+                  return { x: (rect.x + corner.x) / width, y: (rect.y + corner.y) / height };
+                });
+              }));
+              const points = ranges.map(([, topRight]) => topRight);
               if (points.length) entries.push({
-                ...root, key: "comment-" + root.id, replies, points,
+                ...root, key: "comment-" + root.id, replies, points, ranges,
                 jump: () => word.goToComment(root.id, { pageIndex: index }),
               });
             }

@@ -1,10 +1,13 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { OfficeComment, WordReviewEntry, WordReviewSource } from "@/components/office/types";
 import { WORD_PAGE_SURFACE } from "@/components/office/viewer";
 import { gui } from "@/gen/catalog";
 
 type VisibleEntry = { entry: WordReviewEntry; x: number | null; y: number };
 type CardPosition = { top: number; height: number };
+type CommentFrame = {
+  page: number; left: number; top: number; width: number; height: number; entries: WordReviewEntry[];
+};
 
 function revisionLabel(kind: string) {
   switch (kind) {
@@ -53,11 +56,22 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
 }) {
   const rail = useRef<HTMLElement>(null);
   const cards = useRef<HTMLDivElement>(null);
+  const documentClip = useId();
   const [entries, setEntries] = useState<VisibleEntry[]>([]);
+  const [commentFrames, setCommentFrames] = useState<CommentFrame[]>([]);
+  const [firstComment, setFirstComment] = useState<string>();
   const [positions, setPositions] = useState<CardPosition[]>([]);
   const [scrollTop, setScrollTop] = useState(0);
-  const [viewportSize, setViewportSize] = useState({ railX: 0, height: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 0, railX: 0, height: 0 });
   const { authorInk } = source;
+  const selectedKey = active ?? (showComments ? firstComment : undefined);
+
+  useEffect(() => {
+    if (!showComments) setFirstComment(undefined);
+    else if (!active && !firstComment) {
+      setFirstComment(entries.find(({ entry }) => entry.ranges?.length)?.entry.key);
+    }
+  }, [showComments, active, firstComment, entries]);
 
   useEffect(() => {
     const document = host.current;
@@ -72,12 +86,17 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
       frame = 0;
       const viewport = document.getBoundingClientRect();
       const visible: VisibleEntry[] = [];
+      const frames: CommentFrame[] = [];
       const shown = new Set<string>();
       for (const page of document.querySelectorAll<HTMLElement>(WORD_PAGE_SURFACE)) {
         const index = Number(page.dataset.pageIndex);
         const bounds = page.getBoundingClientRect();
         if (bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) continue;
         const entries = cache.get(index);
+        if (showComments && entries?.some(entry => entry.ranges?.length)) frames.push({
+          page: index, entries, left: bounds.left - viewport.left, top: bounds.top - viewport.top,
+          width: bounds.width, height: bounds.height,
+        });
         if (!entries && !pending.has(index)) {
           pending.add(index);
           void source.page(index, showComments, showRevisions).then(items => {
@@ -104,10 +123,16 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
       }
       visible.sort((a, b) => a.y - b.y);
       for (const entry of unanchored) visible.push({ entry, x: null, y: 0 });
-      const railX = document.clientWidth + margin.clientLeft +
+      const width = document.clientWidth;
+      const railX = width + margin.clientLeft +
         parseFloat(getComputedStyle(margin).getPropertyValue("--gap-in"));
       const height = margin.clientHeight;
-      setViewportSize(previous => previous.railX === railX && previous.height === height ? previous : { railX, height });
+      setViewportSize(previous => previous.width === width && previous.railX === railX &&
+        previous.height === height ? previous : { width, railX, height });
+      setCommentFrames(previous => previous.length === frames.length && previous.every((frame, i) =>
+        frame.page === frames[i].page && frame.entries === frames[i].entries && frame.left === frames[i].left &&
+        frame.top === frames[i].top && frame.width === frames[i].width && frame.height === frames[i].height,
+      ) ? previous : frames);
       setEntries(previous => previous.length === visible.length && previous.every((item, i) =>
         item.entry === visible[i].entry && item.x === visible[i].x && item.y === visible[i].y,
       ) ? previous : visible);
@@ -173,7 +198,7 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
       onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
       <div ref={cards} className="relative" style={{ height: last && `calc(${last.top + last.height}px + var(--gap-in))` }}>
         {entries.map(({ entry }, index) => <article key={entry.key} data-word-review-card
-          data-revision={entry.revision} data-active={entry.key === active || undefined}
+          data-revision={entry.revision} data-active={entry.key === selectedKey || undefined}
           onClick={entry.jump ? event => {
             if (event.target instanceof Element && event.target.closest("button")) return;
             const selection = event.currentTarget.ownerDocument.getSelection();
@@ -184,7 +209,7 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
           className="absolute inset-x-in min-w-0 rounded-md border-s-2 bg-fill px-in py-in data-active:bg-fill-strong">
           <div className="max-h-24 overflow-y-auto">
             <ReviewMessage message={entry} action={entry.revision ? revisionLabel(entry.revision) : gui.office_tool_comments}
-              selected={entry.key === active} select={entry.jump ? () => jump(entry) : undefined}/>
+              selected={entry.key === selectedKey} select={entry.jump ? () => jump(entry) : undefined}/>
             {entry.replies?.map((reply, i) => <div key={i} className="mt-in border-s ps-in"
               style={{ borderInlineStartColor: authorInk(reply.author) }}>
               <ReviewMessage message={reply} action={gui.office_reply}/>
@@ -194,14 +219,36 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
       </div>
     </aside>
     <svg aria-hidden="true" data-word-review-connectors className="pointer-events-none absolute inset-0 z-10 size-full overflow-hidden">
+      <defs>
+        <clipPath id={documentClip}><rect width={viewportSize.width} height={viewportSize.height}/></clipPath>
+      </defs>
+      {showComments && <g clipPath={`url(#${documentClip})`}>
+        {commentFrames.map(frame => {
+          const comment = frame.entries.find(entry => entry.key === selectedKey);
+          if (!comment?.ranges) return null;
+          const ink = authorInk(comment.author);
+          return <g key={frame.page}>
+            {comment.ranges.map((range, i) => <polygon key={i} data-word-comment-range
+              points={range.map(({ x, y }) => `${frame.left + x * frame.width},${frame.top + y * frame.height}`).join(" ")}
+              fill={ink} fillOpacity="0.34" stroke={ink} strokeWidth="1.25" strokeLinejoin="round"/>)}
+          </g>;
+        })}
+      </g>}
       {entries.map(({ entry, x, y }, index) => {
         const card = positions[index];
         if (x === null || !card) return null;
         const end = card.top + card.height / 2 - scrollTop;
         if (end < 0 || end > viewportSize.height) return null;
-        const path = `M ${x} ${y} L ${viewportSize.railX} ${end}`;
-        return <path key={entry.key} d={path} data-word-review-connector fill="none" strokeDasharray="3 3"
-          stroke={authorInk(entry.author)} strokeWidth={entry.key === active ? 1.75 : 1.25}/>;
+        const isComment = Boolean(entry.ranges?.length);
+        const path = isComment ? `M ${x} ${y} H ${viewportSize.width} L ${viewportSize.railX} ${end}` :
+          `M ${x} ${y} L ${viewportSize.railX} ${end}`;
+        const selectedComment = entry.key === selectedKey && isComment;
+        const ink = authorInk(entry.author);
+        return <g key={entry.key}>
+          <path d={path} data-word-review-connector fill="none" strokeDasharray={selectedComment ? undefined : "3 3"}
+            stroke={ink} strokeWidth={entry.key === selectedKey ? 1.75 : 1.25}/>
+          {selectedComment && <circle cx={x} cy={y} r="2" fill={ink}/>}
+        </g>;
       })}
     </svg>
   </>;

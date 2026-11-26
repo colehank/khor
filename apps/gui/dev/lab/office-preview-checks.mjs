@@ -142,47 +142,50 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
 
     const wordReview = word.locator('[data-word-review]');
     await togglePane('office-review',wordReview,true);
-    await wordReview.getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
-    assert.deepEqual(await wordReview.locator('header span').allTextContents(),['Khor Lab','批注']);
-    assert.equal(await wordReview.locator('time:visible').getAttribute('datetime'),'2026-11-26T16:39:54Z');
+    const first = wordReview.locator('article').filter({hasText:'核对第一阶段验收范围。'});
+    const second = wordReview.locator('article').filter({hasText:'确认这一项的验收记录。'});
+    await first.waitFor();
+    assert.deepEqual(await first.locator('header span').allTextContents(),['Khor Lab','批注']);
+    assert.equal(await first.locator('time:visible').getAttribute('datetime'),'2026-11-26T16:39:54Z');
     const wordBody = word.locator('[data-office-document]');
     const wordBox = await wordBody.boundingBox();
     assert((await wordReview.boundingBox()).x >= wordBox.x + wordBox.width - 0.5);
-    const connector = word.locator('[data-word-review-connector]').first();
+    const connector = word.locator('[data-word-review-connector]:not([stroke-dasharray])');
     await connector.waitFor({state:'attached'});
     const commentInk = await connector.evaluate(path => getComputedStyle(path).stroke);
-    assert.equal(commentInk,await wordReview.locator('[data-word-review-card]').evaluate(card =>
+    assert.equal(commentInk,await first.evaluate(card =>
       getComputedStyle(card).borderInlineStartColor));
-    const inactiveHighlight = wordBody.locator('[data-ooxml-comment-highlight]').first();
-    await inactiveHighlight.waitFor({state:'attached'});
-    assert.equal(await inactiveHighlight.evaluate(node => getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)',
-      'An unselected comment leaves its source text clear');
-    await wordReview.getByText('核对第一阶段验收范围。',{exact:true}).click();
-    // Opening the right pane makes the viewer refit the page. Check the
-    // settled native highlight against the original comment range.
-    await page.waitForFunction(() => {
+    const expectAnchor = text => page.waitForFunction(text => {
       const documentBody = document.querySelector('[data-office-preview="docx"] [data-office-document]');
-      const highlight = documentBody?.querySelector('[data-ooxml-comment-highlight][data-active="true"]');
+      const ranges = document.querySelectorAll('[data-word-comment-range]');
+      const connector = document.querySelector('[data-word-review-connector]:not([stroke-dasharray])');
       const run = [...documentBody?.querySelectorAll('[data-ooxml-selection-run="docx"]') ?? []]
-        .find(node => node.textContent === '本周摘要');
-      if (!highlight || !run) return false;
+        .find(node => node.textContent === text);
+      if (ranges.length !== 1 || !connector || !run) return false;
+      const highlight = ranges[0];
       const mark = highlight.getBoundingClientRect();
       const line = run.getBoundingClientRect();
-      return mark.left < line.right && line.left < mark.right &&
-        mark.top < line.bottom && line.top < mark.bottom;
-    },null,{timeout:5_000});
-    await wordReview.locator('[data-word-review-card][data-active]').waitFor();
-    assert.equal(await wordReview.locator('[data-word-review-select]').getAttribute('aria-pressed'),'true');
-    assert.notEqual(await inactiveHighlight.evaluate(node => getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)',
-      'Selecting the comment colours the anchored text span');
-    const heading = await wordBody.getByText('本周摘要',{exact:true}).boundingBox();
-    const sourceY = await connector.evaluate(path =>
-      path.getPointAtLength(0).y + path.ownerSVGElement.getBoundingClientRect().top);
-    assert(sourceY >= heading.y - 2 && sourceY <= heading.y + heading.height + 2,
-      'Word draws the connector from the anchored text row');
+      const stroke = getComputedStyle(highlight);
+      const origin = connector.getPointAtLength(0);
+      const viewport = connector.ownerSVGElement.getBoundingClientRect();
+      return Math.min(mark.right, line.right) - Math.max(mark.left, line.left) >= line.width * 0.75 &&
+        mark.top < line.bottom && line.top < mark.bottom &&
+        Number(stroke.fillOpacity) >= 0.30 && stroke.stroke === getComputedStyle(connector).stroke &&
+        Math.abs(viewport.left + origin.x - mark.right) < 1 &&
+        viewport.top + origin.y >= mark.top - 1 && viewport.top + origin.y <= mark.bottom + 1;
+    },text,{timeout:5_000});
+    await expectAnchor('第一阶段验收');
+    assert.equal(await first.locator('[data-word-review-select]').getAttribute('aria-pressed'),'true');
+    await second.getByText('确认这一项的验收记录。',{exact:true}).click();
+    await expectAnchor('需求确认');
+    assert.equal(await first.locator('[data-word-review-select]').getAttribute('aria-pressed'),'false');
+    await first.locator('[data-word-review-select]').press('Enter');
+    await expectAnchor('第一阶段验收');
+    await wordBody.click({position:{x:4,y:4}});
+    await expectAnchor('第一阶段验收');
     await page.screenshot({path:path.join(report,name+'-word-comments.png'), animations:'disabled'});
     await togglePane('office-review',wordReview,false);
-    assert.equal(await word.locator('[data-ooxml-comment-highlight]:visible').count(),0,
+    assert.equal(await word.locator('[data-word-comment-range]').count(),0,
       'Closing comments hides the document markup');
     await togglePane('office-revisions',wordReview,true);
     await wordBody.getByText('联调尚未开始。',{exact:true}).waitFor({state:'attached'});

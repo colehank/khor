@@ -20,6 +20,7 @@ export type OfficeThread = OfficeComment & {
 export type WordReviewPoint = { x: number; y: number };
 export type WordReviewEntry = OfficeThread & {
   points: WordReviewPoint[];
+  ranges?: WordReviewPoint[][];
   revision?: string;
 };
 export type WordReviewSource = {
