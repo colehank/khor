@@ -586,7 +586,7 @@ jobs:
       - name: Run the selected interaction groups and retain all failures
         run: |
           failed=0
-          gates=(updates-ui recent-places-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel viewport-resume page-retention-ui browser-yield native-events native-helpers chat-recovery ended-terminal khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui key-row-ui workspace-move-ui dialogs attachment-ui)
+          gates=(updates-ui recent-places-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel viewport-resume page-retention-ui browser-yield native-events native-helpers chat-recovery ended-terminal khor-conversations-ui list-scroll-ui file-handoff file-office-ui file-pdf-ui workspace-content-ui terminal-links-ui notification-ui key-row-ui workspace-move-ui dialogs attachment-ui)
           if [ "$KHOR_QUALITY_SUITE" = updates ]; then
             gates=(updates-ui)
           elif [ "$KHOR_INTERACTION_SCOPE" = settings ]; then
@@ -648,7 +648,7 @@ jobs:
             ${{ runner.temp }}/khor-list-scroll-evidence
             ${{ runner.temp }}/quality-file-handoff
             ${{ runner.temp }}/quality-recent-places-ui
-            ${{ runner.temp }}/quality-quicklook
+            ${{ runner.temp }}/quality-file-office-ui
             ${{ runner.temp }}/quality-file-pdf-ui
             ${{ runner.temp }}/quality-scroll
             ${{ runner.temp }}/quality-elements

@@ -8,7 +8,6 @@ import {
   filePreviewSupported,
   filePreviewOpen,
   said,
-  type FilePreviewKind,
 } from "@/api";
 import { FILE_HANDOFF_POLL_MS } from "@/lib/tempo";
 import { holdNativeFilePreview } from "@/lib/native-file-preview";
@@ -28,7 +27,7 @@ type Pending = {
 };
 const idle: Progress = { phase: "idle", moved: 0, total: 0, error: null, intent: "open" };
 let capability: Promise<boolean> | undefined;
-const previewCapabilities: Partial<Record<FilePreviewKind, Promise<boolean>>> = {};
+let pdfCapability: Promise<boolean> | undefined;
 
 /** One original-file transfer belongs to one visible file page. A late
  * native response cannot open a file after its page has been left. */
@@ -37,12 +36,11 @@ export function useFileHandoff(machine: string, path: string, enabled = true, pa
   const owner = pageOwner ?? localOwner;
   const page = useMemo(() => ({machine,path,enabled}), [machine,path,enabled]);
   const attached = useRef<typeof page | null>(null);
-  const previewKind: FilePreviewKind = /\.pdf$/i.test(path) ? "pdf" : "document";
-  const previewPath = window.__KHOR_WINDOW_PLATFORM__ === "windows" ? path : undefined;
+  const pdf = /\.pdf$/i.test(path);
   const pending = useRef<Pending | null>(null);
   const [supported, setSupported] = useState(false);
-  const [previewSupport, setPreviewSupport] = useState<{kind: FilePreviewKind; path?: string; value: boolean} | null>(null);
-  const previewSupported = previewSupport?.kind === previewKind && previewSupport.path === previewPath ? previewSupport.value : null;
+  const [pdfSupport, setPdfSupport] = useState<boolean | null>(null);
+  const previewSupported = enabled && pdf ? pdfSupport : false;
   const lastIntent = useRef<"open" | "preview">("open");
   const [progress, setProgress] = useState<Progress>(idle);
 
@@ -65,15 +63,14 @@ export function useFileHandoff(machine: string, path: string, enabled = true, pa
       (capability ??= fileHandoffSupported().catch(() => { capability = undefined; return false; })).then(value => {
         if (alive) setSupported(value);
       });
-      const preview = previewPath === undefined
-        ? (previewCapabilities[previewKind] ??= filePreviewSupported(previewKind).catch(() => { delete previewCapabilities[previewKind]; return false; }))
-        : filePreviewSupported(previewKind, previewPath).catch(() => false);
-      void preview.then(value => {
-        if (alive) setPreviewSupport({kind:previewKind,path:previewPath,value});
-      });
+      if (pdf) {
+        (pdfCapability ??= filePreviewSupported().catch(() => { pdfCapability = undefined; return false; })).then(value => {
+          if (alive) setPdfSupport(value);
+        });
+      }
     }
     return () => { alive = false; };
-  }, [enabled,previewKind,previewPath]);
+  }, [enabled,pdf]);
 
   useLayoutEffect(() => {
     attached.current=page;

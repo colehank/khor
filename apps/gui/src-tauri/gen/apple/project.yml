@@ -81,7 +81,6 @@ targets:
       - sdk: Metal.framework
       - sdk: MetalKit.framework
       - sdk: PDFKit.framework
-      - sdk: QuickLook.framework
       - sdk: QuartzCore.framework
       - sdk: Security.framework
       # iroh's interface watcher (netdev, system-configuration) reads the

@@ -262,10 +262,7 @@ fn native_command(
             "page_state" => encode(page_state(tab()?)),
             "page_steps" => encode(rt.block_on(page_steps(app.clone(), tab()?))?),
             "page_step" => encode(rt.block_on(page_step(app.clone(), tab()?, text("way")?))?),
-            "file_preview_supported" => encode(crate::file_preview_supported(
-                text("kind")?,
-                optional_argument(args, "path")?,
-            )),
+            "file_preview_supported" => encode(crate::file_preview_supported(text("kind")?)),
             "file_preview_open" => {
                 encode(rt.block_on(crate::file_preview_open(webview()?, text("id")?))?)
             }

@@ -180,8 +180,7 @@ function useFileVerbs({
   useEffect(() => setSaid(null), [path]);
   const kind = kindOf(path);
   const sharing = !native && kind !== "doc" && shares();
-  // On a Mac the file is handed to this machine's other apps: a far one
-  // is fetched into a temporary folder first (`pullTemp`).
+  // Desktop files open on this machine. A remote file arrives as a temporary copy.
   const local = () => here ? Promise.resolve(path) : pullTemp(machine, path);
   const fail = (e: unknown) => setSaid(String((e as Error)?.message ?? e));
   const share = () =>
@@ -193,10 +192,14 @@ function useFileVerbs({
   const previewKind = rendererOf(path) !== null || kind === "image" || kind === "svg" || kind === "pdf";
   const textKind = kind === "text";
   const menu: FileMenuAction[] = [
-    ...((kind === "doc" || kind === "pdf") && handoff?.previewSupported ? [{key:"native-preview",label:gui.file_face_preview,run:handoff.preview,afterClose:true}] : []),
+    ...(kind === "pdf" && handoff?.previewSupported ? [{key:"native-preview",label:gui.file_face_preview,run:handoff.preview,afterClose:true}] : []),
     ...(onLocate ? [{key:"locate",label:gui.file_locate,run:onLocate,afterClose:true}] : []),
     ...(native ? [
-      {key:here?"open-default":"open-copy",label:here?gui.file_open_default:gui.file_open_copy,run:()=>void local().then(p=>launchOn("",p)).catch(fail)},
+      {
+        key: here ? "open-default" : "open-copy",
+        label: here ? gui.file_open_default : kind === "doc" ? gui.file_open_copy_default : gui.file_open_copy,
+        run: () => void local().then(p => launchOn("", p)).catch(fail),
+      },
       ...(here?[{key:"reveal",label:fileManagerLabel(),run:()=>void reveal(path).catch(fail)}]:[]),
     ] : handoff?.supported ? [{key:"open-other",label:gui.file_open_other,run:handoff.open,afterClose:true}] : sharing ? [{key:"share",label:gui.chat_file_share,run:share}] : []),
     {

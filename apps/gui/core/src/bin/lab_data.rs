@@ -73,6 +73,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut directories = BTreeMap::new();
     let mut documents = BTreeMap::new();
     directory_data(&workspace.0, "", &mut directories, &mut documents)?;
+    let mut office_previews = BTreeMap::new();
+    for entry in fs::read_dir(source.join("office"))? {
+        let entry = entry?;
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "Invalid Office fixture name")?;
+        let bytes = fs::read(entry.path())?;
+        let markdown = khor_node::preview::markdown(&name, &bytes)?;
+        office_previews.insert(
+            format!("office/{name}"),
+            json!({"total": bytes.len(), "html": khor_node::preview::html(&markdown)}),
+        );
+    }
     let ids: Vec<_> = std::iter::once("e".repeat(64))
         .chain((2..=6).map(|index| format!("{index:x}").repeat(64)))
         .collect();
@@ -120,7 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .collect();
     println!(
         "{}",
-        json!({"session_attention":attention,"schema":1,"machine_ids":ids,"avatars":avatars,"directories":directories,"documents":documents,"pairing_ticket":pairing_ticket,"settings":{"zh":zh,"en":en}})
+        json!({"session_attention":attention,"schema":1,"machine_ids":ids,"avatars":avatars,"directories":directories,"documents":documents,"office_previews":office_previews,"pairing_ticket":pairing_ticket,"settings":{"zh":zh,"en":en}})
     );
     Ok(())
 }

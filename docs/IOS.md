@@ -176,10 +176,8 @@ iOS 在 app 离开屏幕几秒后挂起它，节点手里的东西都聋了：�
 - 缓存为系统临时目录中的应用文件，不是接收目录；按版本复用，七天过期，512 MiB 为软预算，刚使用的副本至少保留一小时，单个大于预算的原文件仍可打开。取消和失败删除未完成副本。
 - 原生能力由后端报告：iOS 使用系统活动面板，macOS 使用默认应用；Android 通过应用私有 FileProvider URI 只读授权给 ACTION_VIEW，找不到应用时显示失败并可重试。网页使用 Web Share（仅分享可完整读取的文件）。Android 尚无已配置的 SDK／APK 实机验证，不声明 Office 原生预览能力。
 
-## Apple Office 原生预览（2026-10-22）
+## Office 文件
 
-Word、PowerPoint、Excel 文件在 iOS / macOS 原生 App 中提供「预览」入口，共用原文件任务、进度、取消、缓存和重试；原生能力确认后不再将 Office 文档转为 Markdown。HTTP 及其它平台保留已有内容提取回退。预览失败保留「用其他应用打开」。
+DOCX、PPTX、XLSX 在文件页和附件中直接显示排版。处理失败时，工作区文件可显示提取的文字和结构。旧版 Office 格式沿用文字提取。移动端通过「用其他应用打开」交给系统处理原文件。
 
-- iOS 使用 QLPreviewController；数据源及控制器保持到关闭，禁止编辑。macOS 使用 QLPreviewView 和独立系统窗口；Esc / Cmd-W 仅关闭预览，菜单关闭也不落到后面的文件标签。
-- 原生预览不重建文件页、不改变标签、甲板高度或滚动位置；关闭后可再次预览。只读能力不承诺 Office 的动画、字体或复杂排版完全一致。
-- `npm run quicklook` 验证 UI / IPC 边界。真实独立 Mac App 已显示生成的 DOCX / 中文 PPTX，并验收 Esc / Cmd-W 后返回同一文件标签；iOS 编译通过，真机系统预览及 Android FileProvider 仍须对应设备验收。
+`npm run file-office-ui` 检查直接渲染、外部打开及附件路径。`npm run file-pdf-ui` 检查 iOS 原生 PDF 阅读器的传输与关闭流程。

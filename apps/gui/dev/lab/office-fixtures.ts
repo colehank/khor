@@ -1,16 +1,16 @@
-export const officeFixtures = ['阶段汇报.pptx', '项目周报.docx', '验收台账.xlsx'].map(name => 'office/'+name);
+import generated from './data/world.generated.json';
+
+const previews: Record<string, { total: number; html: string }> = generated.office_previews;
+export const officeFixtures = Object.keys(previews);
 
 export async function officeFixturePreview(file: string, raw: boolean) {
+  const {total, html} = previews[file];
+  const preview = {kind:'doc',total,cut:false,empty:!html,media:'application/octet-stream',data:'',html};
+  if (!raw) return preview;
   const version = document.querySelector<HTMLMetaElement>('meta[name="khor-lab-version"]')?.content;
   const base = version ? '/versions/'+version : '';
   const response = await fetch(base+'/assets/preview-fixtures/'+file.split('/').map(encodeURIComponent).join('/'));
   if (!response.ok) throw new Error('Office Lab sample is missing');
   const bytes = new Uint8Array(await response.arrayBuffer());
-  const title = file.replace(/^office\//,'').replace(/\.\w+$/,'');
-  return {
-    kind: 'doc', total: bytes.length, cut: false, empty: false,
-    media: 'application/octet-stream',
-    data: raw ? btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')) : '',
-    html: raw ? '' : '<h1>'+title+'</h1><p>Office 文档的文本预览。</p>',
-  };
+  return {...preview, data:btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')), html:''};
 }

@@ -12,8 +12,11 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
   const errors = [];
   const origin = `http://127.0.0.1:${port}`;
   const foreign = [];
+  const officeAssets = [];
+  page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => {
     const url = new URL(request.url());
+    if (url.pathname.includes('/assets/preview-fixtures/office/')) officeAssets.push(url.pathname);
     if (/^https?:$/.test(url.protocol) && url.origin !== origin) foreign.push(url.href);
   });
   const environment = {platform:'desktop',theme:'dark',material:'frost',opacity:60,
@@ -25,6 +28,7 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const viewer = page.locator(`[data-office-preview="${format}"][data-ready]`);
     await viewer.waitFor({timeout:20_000});
     await viewer.locator('canvas').first().waitFor();
+    assert.equal(await page.locator('[data-file-face-toggle]:visible').count(),0,`${format} opens without a preview switch`);
     if (!mobile) {
       const chrome = await page.locator('[data-ws-mid] [data-tab-bar]').boundingBox();
       const document = await viewer.boundingBox();
@@ -33,6 +37,7 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     }
     return viewer;
   };
+  const text = page.locator('[data-look="doc"]:visible');
   const visibleCanvas = viewer => viewer.locator('canvas').first();
   const image = viewer => visibleCanvas(viewer).evaluate(canvas => {
     const {width,height} = canvas;
@@ -126,13 +131,14 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       return canvas && canvas.toDataURL() !== before;
     },firstSheet[2]);
     await page.screenshot({path:path.join(report,name+'-excel.png')});
+    assert.equal(officeAssets.length,3,'Each renderer requests its original once');
     assert.deepEqual(foreign,[], 'Preview, including fonts, stays on the Lab origin');
 
     await page.route(/_parser_bg[^/]*\.wasm(?:\?|$)/, route =>
       route.request().resourceType() === 'fetch' ? route.abort() : route.continue());
     await open('docx');
     await page.locator('[data-doc-note="doc"]').waitFor({timeout:20_000});
-    assert.match(await page.locator('[data-look="doc"]').textContent(),/项目周报/);
+    assert.match(await text.textContent(),/项目进度周报/);
     assert.equal(await page.locator('[data-office-preview]').count(),0,'Initial rendering failures release the Office viewer');
   } catch (error) {
     errors.push(String(error));

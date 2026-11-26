@@ -335,7 +335,7 @@ export function FilePreview({
   }, []);
   useEffect(() => setSaid(null), [path]);
   const kind = path === null ? "text" : kindOf(path);
-  const nativePreview = (kind === "doc" || kind === "pdf") && handoff.previewSupported;
+  const nativePreview = kind === "pdf" && handoff.previewSupported;
   const sharing = path !== null && kind !== "doc" && shares();
   const copy = () => {
     if (path === null) return;
@@ -382,8 +382,8 @@ export function FilePreview({
                 <PathCut text={path} className="min-w-0 flex-1" />
               </div>
               <div className="flex items-center justify-between gap-in">
-                <SegmentedControl label={gui.file_face_preview} value={face} onChange={setFace}
-                  options={[{ key: "source", label: gui.files_original }, { key: "preview", label: gui.file_face_preview }]} />
+                {kind !== "doc" && <SegmentedControl label={gui.file_face_preview} value={face} onChange={setFace}
+                  options={[{ key: "source", label: gui.files_original }, { key: "preview", label: gui.file_face_preview }]} />}
                 <span className="text-caption text-muted-foreground">{gui.file_read_only}</span>
               </div>
               <div className="flex flex-wrap items-center gap-in">

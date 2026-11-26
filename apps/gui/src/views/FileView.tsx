@@ -414,7 +414,7 @@ function FileBody({
   const officeFallback = failedOffice?.revision === officeRevision ? failedOffice.reason : null;
   const fallBackOffice = useCallback((reason: OfficeFailure) => setFailedOffice({ revision: officeRevision, reason }), [officeRevision]);
   const inlineOffice = office && !officeFallback ? office : null;
-  const nativePreview = !inlineOffice && !localFile && (kind === "doc" || kind === "pdf") && handoff.previewSupported;
+  const nativePreview = !localFile && kind === "pdf" && handoff.previewSupported;
   const [localUrl,setLocalUrl]=useState<string>();
   useEffect(()=>{if(!localFile)return;const url=URL.createObjectURL(localFile);setLocalUrl(url);return()=>URL.revokeObjectURL(url);},[localFile]);
   const readText=async(m:string,p:string):Promise<FileText>=>localFile?{text:await localFile.slice(0,256*1024).text(),total:localFile.size,at_ms:localFile.lastModified,cut:localFile.size>256*1024,binary:false,digest:""}:fetchFileText(m,p);
@@ -559,7 +559,7 @@ function FileBody({
   const previewMode = officeFallback === "too-large" || (officeFallback && localFile) ? null :
     inlineOffice ? (localFile ? null : "preview") :
     kind === "text" || kind === "video" || kind === "audio" ||
-    !localFile && (kind === "doc" || kind === "pdf") && handoff.previewSupported === null
+    !localFile && kind === "pdf" && handoff.previewSupported === null
       ? null : nativePreview ? "stat" : "preview";
   useLayoutEffect(() => {
     if (previewMode === null) return;
@@ -979,18 +979,19 @@ function FileBody({
     </div>}
   </div>;
   if (kind === "video" || kind === "audio") return localFile&&!localUrl?<div/>:previewSurface(<ResourcePreview machine={machine} path={path} media={kind} sourceUrl={localUrl}/>);
-  if (inlineOffice || officeFallback === "too-large") {
+  // Older backends can answer the original-file request with extracted text.
+  if ((inlineOffice && !look?.html) || officeFallback === "too-large") {
     const total = localFile?.size ?? look?.total;
     if (officeFallback === "too-large" || look?.cut || (total !== undefined && total > OFFICE_PREVIEW_LIMIT)) {
       return previewSurface(localFile ? <RegionState state="empty" message={gui.file_preview_too_big}/> :
-        <Away path={path} handoff={handoff} total={total ?? null} preview={!!handoff.previewSupported}
+        <Away path={path} handoff={handoff} total={total ?? null}
           word={gui.file_preview_too_big} onTake={take} took={took}/>);
     }
     const source = localFile ?? look?.data;
     if (localFile?.size === 0) return previewSurface(<RegionState state="empty" message={gui.doc_empty}/>);
     if (inlineOffice && source) return previewSurface(<OfficePreview format={inlineOffice} source={source} onFallback={fallBackOffice}/>);
     if (lookError !== null || look !== null) return previewSurface(
-      <Away path={path} handoff={handoff} total={total ?? null} preview={!!handoff.previewSupported}
+      <Away path={path} handoff={handoff} total={total ?? null}
         word={look?.empty ? gui.doc_empty : ""} onTake={take} took={took}/>);
     return previewSurface(<RegionState state="loading-never"/>);
   }
@@ -1072,7 +1073,7 @@ function FileBody({
             data-doc-note={look.kind}
             className="flex-none border-t px-3 py-1.5 text-callout text-muted-foreground"
           >
-            {look.kind === "pdf" ? gui.pdf_as_words : gui.doc_plain}
+            {look.kind === "pdf" ? gui.pdf_as_words : officeFallback ? gui.file_office_unavailable : gui.doc_plain}
           </div>
         </div>
       );

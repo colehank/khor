@@ -12,6 +12,7 @@ INPUTS = (
     'crates/core/src/avatar/mark.rs',
     'crates/node/src/files.rs',
     'crates/node/src/list.rs',
+    'crates/node/src/preview.rs',
     'apps/gui/core/src/bin/lab_data.rs',
     'apps/gui/core/src/qr.rs',
     'apps/gui/core/src/lib.rs',
@@ -39,6 +40,10 @@ def validate(data):
         raise ValueError('Lab directory records are incomplete')
     if not {'project/README.md', 'project/src/navigation.ts', 'project/docs/中文说明.md'} <= data.get('documents', {}).keys():
         raise ValueError('Lab file records are incomplete')
+    office = data.get('office_previews', {})
+    if {Path(name).suffix for name in office} != {'.docx', '.pptx', '.xlsx'} or not all(
+            item.get('html') and item.get('total', 0) > 0 for item in office.values()):
+        raise ValueError('Lab Office fixtures require generated text for all three formats')
     ticket = data.get('pairing_ticket')
     if (not isinstance(ticket, dict) or not isinstance(ticket.get('token'), str)
             or not ticket['token'].startswith('khorLAB_ONLY_') or not isinstance(ticket.get('qr'), dict)

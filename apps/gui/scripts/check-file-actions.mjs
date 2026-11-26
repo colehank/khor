@@ -52,7 +52,7 @@ window.showTree();`);
    Object.defineProperty(navigator,'canShare',{value:()=>phone});
    Object.defineProperty(navigator,'share',{value:async v=>window.shared.push(v.files.map(f=>f.name))});
   },{platform:scenario.platform,phone:scenario.width<700});
-  page=await context.newPage();page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));
+  page=await context.newPage();page.setDefaultTimeout(5000);page.setDefaultNavigationTimeout(30_000);page.on('pageerror',e=>errors.push(e.message));
   const calls=[];
   await page.route(`http://127.0.0.1:${port}/**`,async r=>{
    const cmd=new URL(r.request().url()).pathname.slice(1),args=r.request().postDataJSON()||{};calls.push({cmd,args});
@@ -64,7 +64,8 @@ window.showTree();`);
    else if(cmd==='read_text')result={text,total:text.length,at_ms:0,cut:false,binary:false,digest:'0'.repeat(64)};
    else if(cmd==='file_stat')result={total:text.length,at_ms:0,digest:'0'.repeat(64)};
    else if(cmd==='about')result={hosts:true,faces:[]};
-   else if(cmd==='pull_temp')result=args.machine?'/tmp/khor-test/notes.md':args.path;
+   else if(cmd==='preview')result={kind:'doc',media:'',data:'',html:'<p>Office text</p>',total:24,cut:false,empty:false};
+   else if(cmd==='pull_temp')result=args.machine?'/tmp/khor-test/'+args.path.split('/').at(-1):args.path;
    await r.fulfill({json:result}).catch(()=>{});
   });
   await page.route('**/__file_actions?**',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme="dark"><body><div id="root" class="flex h-screen flex-col"></div><script type="module">import R from '/@react-refresh';R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module" src="/scripts/.file-actions-${process.pid}.tsx"></script></body></html>`}));
@@ -167,6 +168,21 @@ window.showTree();`);
    const geometry=await page.locator('[data-file-deck]').evaluate(deck=>{const group=deck.querySelector('[data-file-actions]').getBoundingClientRect(),pill=deck.querySelector('[data-file-pill]').getBoundingClientRect(),name=deck.querySelector('[data-file-name]');return {group:{x:group.x,right:group.right,width:group.width},pill:{x:pill.x,right:pill.right},truncated:name.scrollWidth>name.clientWidth,viewport:innerWidth,scroll:document.documentElement.scrollWidth};});
    assert(geometry.truncated,'long filename did not truncate');assert(geometry.pill.right<=geometry.group.x&&geometry.group.right<=geometry.viewport,'long name overlaps/pushes actions');assert(geometry.scroll<=geometry.viewport,'long file caused horizontal page overflow');
    await page.screenshot({path:join(out,'phone-long-name.png')});
+  }
+  if (scenario.native) {
+   const officePath='/project/report.docx';
+   await page.evaluate(here=>window.showFile(here,'/project/report.docx'),scenario.here);
+   await page.locator('[data-look="doc"]').waitFor();
+   await page.locator('[data-file-more]').click();
+   const action=page.locator(`[data-file-more-item="${scenario.here?'open-default':'open-copy'}"]`);
+   assert.equal(await action.innerText(),scenario.here?'使用默认应用打开':'下载副本并用默认应用打开');
+   assert.equal(await page.locator('[data-file-more-item="native-preview"]').count(),0);
+   if(scenario.name==='mac-local'||scenario.name==='mac-remote')await page.screenshot({path:join(out,`${scenario.name}-office-more.png`)});
+   await action.click();
+   const target=scenario.here?officePath:'/tmp/khor-test/report.docx';
+   for(let i=0;i<20&&!calls.some(c=>c.cmd==='launch'&&c.args.target===target);i++)await pause(50);
+   assert(calls.some(c=>c.cmd==='launch'&&c.args.machine===''&&c.args.target===target),'Office uses the viewing machine’s default app');
+   assert.equal(calls.filter(c=>c.cmd==='pull_temp'&&c.args.path===officePath).length,scenario.here?0:1);
   }
   checks.push(scenario.name);console.log('PASS',scenario.name);await context.close();
  }
