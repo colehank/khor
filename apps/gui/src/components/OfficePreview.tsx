@@ -300,7 +300,7 @@ export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Tool data-office-zoom aria-label={gui.office_tool_zoom + " " + Math.round(scale * 100) + "%"}
-                className={cn("tabular-nums", toolbarSeat && "w-auto px-in text-caption")}>{Math.round(scale * 100)}%</Tool>
+                className={cn("tabular-nums", toolbarSeat && "min-w-[calc(5ch+2*var(--gap-in))] whitespace-nowrap px-in text-caption")}>{Math.round(scale * 100)}%</Tool>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="center">
               {toolbarSeat && <>
