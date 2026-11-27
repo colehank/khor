@@ -38,7 +38,7 @@ import { caretCoveredAt, editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
-import { officeReadingLabEnabled } from "@/components/OfficePreview";
+import { officeFormat } from "@/components/OfficePreview";
 import {ContentPill} from '@/components/ContentDeck';
 import { DeckBand, TabSheet } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
@@ -441,7 +441,7 @@ export function FilePage({
   const controlledFace = faceControl !== undefined;
   const handoff = useFileHandoff(machine,path,!localFile);
   const [readingToolsSeat, setReadingToolsSeat] = useState<HTMLDivElement | null>(null);
-  const previewReadingTools = !!embeddedToolbar && rev === null && officeReadingLabEnabled(path);
+  const previewReadingTools = !!embeddedToolbar && rev === null && officeFormat(path) !== null;
   const verbs = useFileVerbs({
     more,
     machine,

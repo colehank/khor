@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AnnotationMode, GlobalWorkerOptions, getDocument } from "pdfjs-dist";
-import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/web/pdf_viewer.mjs";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { AnnotationMode, GlobalWorkerOptions, getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { EventBus, PDFLinkService, PDFViewer } from "pdfjs-dist/legacy/web/pdf_viewer.mjs";
+import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import { PreviewZoom } from "@/components/PreviewZoom";
 import { RegionState } from "@/components/RegionState";
@@ -10,8 +10,7 @@ import { anchorSurface, bindPreviewPinch, surfaceAt } from "@/lib/preview-pinch"
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
-/** Lab renderer for trying the shared zoom controls on real, selectable PDF pages. */
-export default function PdfZoomLab({ url, fallback }: { url: string; fallback: ReactNode }) {
+export default function PdfPreview({ url, fallback }: { url: string; fallback: ReactNode }) {
   const port = useRef<HTMLDivElement>(null);
   const pages = useRef<HTMLDivElement>(null);
   const viewer = useRef<PDFViewer | null>(null);
@@ -39,7 +38,14 @@ export default function PdfZoomLab({ url, fallback }: { url: string; fallback: R
       if (pdf.currentScaleValue === "page-width") pdf.currentScaleValue = "page-width";
     });
     resize.observe(container);
-    const task = getDocument({ url });
+    const assets = new URL(import.meta.env.DEV ? "/node_modules/pdfjs-dist/" : "pdf-assets/", document.baseURI);
+    const task = getDocument({
+      url,
+      cMapUrl: new URL("cmaps/", assets).href,
+      standardFontDataUrl: new URL("standard_fonts/", assets).href,
+      wasmUrl: new URL("wasm/", assets).href,
+      iccUrl: new URL("iccs/", assets).href,
+    });
     void task.promise.then(document => {
       if (abort.signal.aborted) return;
       linkService.setDocument(document);
@@ -70,7 +76,7 @@ export default function PdfZoomLab({ url, fallback }: { url: string; fallback: R
   }, [coarse, ready]);
 
   if (failed) return fallback;
-  return <div data-pdf-zoom-lab data-band-boundary data-ready={ready || undefined}
+  return <div data-pdf-preview data-band-boundary data-ready={ready || undefined}
     className="relative min-h-0 flex-1 overflow-hidden">
     <div ref={port} className="absolute inset-0 overflow-auto touch-pan-x touch-pan-y">
       <div ref={pages} className="pdfViewer"/>

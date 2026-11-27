@@ -55,14 +55,14 @@ import type { EditorHistorySlot } from "@/lib/code/history";
 import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import {ResourcePreview} from "@/components/ResourcePreview";
 import { OFFICE_PREVIEW_LIMIT, OfficePreview, officeFormat, type OfficeFailure } from "@/components/OfficePreview";
-import { PreviewZoom, PreviewZoomIntroScope, floatingZoomLabEnabled } from "@/components/PreviewZoom";
+import { PreviewZoom, PreviewZoomIntroScope } from "@/components/PreviewZoom";
 import { RegionState } from "@/components/RegionState";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { IconClose } from "@/components/icons";
-import { cli, gui } from "@/gen/catalog";
+import { cli, gui, msg } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { blameOfLines, useBlameShown } from "@/lib/blame";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
@@ -89,7 +89,7 @@ import { prepare } from "@/lib/md/extras";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
 
-const PdfZoomLab = lazy(() => import("@/components/PdfZoomLab"));
+const PdfPreview = lazy(() => import("@/components/PdfPreview"));
 
 /** The same table `khor_node::preview::kind` keeps, for the one
     question this view must answer **before** asking anything: which of
@@ -426,8 +426,7 @@ function FileBody({
   const officeFallback = failedOffice?.revision === officeRevision ? failedOffice.reason : null;
   const fallBackOffice = useCallback((reason: OfficeFailure) => setFailedOffice({ revision: officeRevision, reason }), [officeRevision]);
   const inlineOffice = office && !officeFallback ? office : null;
-  const floatingZoom = floatingZoomLabEnabled();
-  const nativePreview = !floatingZoom && !localFile && kind === "pdf" && handoff.previewSupported;
+  const nativePreview = !localFile && kind === "pdf" && handoff.previewSupported;
   const [localUrl,setLocalUrl]=useState<string>();
   useEffect(()=>{if(!localFile)return;const url=URL.createObjectURL(localFile);setLocalUrl(url);return()=>URL.revokeObjectURL(url);},[localFile]);
   const readText=async(m:string,p:string):Promise<FileText>=>localFile?{text:await localFile.slice(0,256*1024).text(),total:localFile.size,at_ms:localFile.lastModified,cut:localFile.size>256*1024,binary:false,digest:""}:fetchFileText(m,p);
@@ -531,7 +530,7 @@ function FileBody({
   // in is gone with the row that read it.
   /** A picture zooms under two fingers (`usePinch`). */
   const imageZoom = useRef<((factor: number) => void) | null>(null);
-  const pinch = usePinch(floatingZoom ? imageZoom : undefined);
+  const pinch = usePinch(imageZoom);
   /** Bumped to ask the diff again. **A counter rather than a boolean**:
       two saves in a row have to be two questions, and a flag that was
       already true would answer the second one with the first one's
@@ -573,7 +572,7 @@ function FileBody({
   const previewMode = officeFallback === "too-large" || (officeFallback && localFile) ? null :
     inlineOffice ? (localFile ? null : "preview") :
     kind === "text" || kind === "video" || kind === "audio" ||
-    !floatingZoom && !localFile && kind === "pdf" && handoff.previewSupported === null
+    !localFile && kind === "pdf" && handoff.previewSupported === null
       ? null : nativePreview ? "stat" : "preview";
   useLayoutEffect(() => {
     if (previewMode === null) return;
@@ -1034,22 +1033,18 @@ function FileBody({
             alt=""
             className="max-h-full max-w-full object-contain data-[image-pan=ready]:cursor-grab data-[image-pan=dragging]:cursor-grabbing"
           />
-          {floatingZoom && <PreviewZoom onZoom={step => imageZoom.current?.(step > 0 ? 1.25 : 0.8)}/>}
+          <PreviewZoom onZoom={step => imageZoom.current?.(step > 0 ? 1.25 : 0.8)}/>
         </div>
       );
     }
     if (look.kind === "pdf" && pdfAt !== null) {
-      // **The file itself, drawn by the browser** (「pdf 你咋转成字符
-      // 了,应该直接预览」— the user, 2026-09-14). An `<iframe>` rather
-      // than `<object>`: both reach the same viewer, and a frame is the
-      // one of the two whose failure mode is a blank rectangle rather
-      // than a silent fallback to nothing.
-      const browserPdf = <iframe data-pdf-frame src={pdfAt}
-        title={path.split("/").pop() ?? path} className="min-h-0 flex-1 border-0"/>;
-      return previewSurface(floatingZoom ?
+      const fallback = navigator.pdfViewerEnabled ? <iframe data-pdf-frame src={pdfAt}
+        title={path.split("/").pop() ?? path} className="min-h-0 flex-1 border-0"/> :
+        <Away path={path} handoff={handoff} total={look.total} word={msg.file_preview_unavailable} onTake={take} took={took}/>;
+      return previewSurface(
         <Suspense fallback={<RegionState state="loading-never"/>}>
-          <PdfZoomLab key={pdfAt} url={pdfAt} fallback={browserPdf}/>
-        </Suspense> : browserPdf);
+          <PdfPreview key={pdfAt} url={pdfAt} fallback={fallback}/>
+        </Suspense>);
     }
     if (look.kind === "doc" || look.kind === "pdf") {
       return previewSurface(

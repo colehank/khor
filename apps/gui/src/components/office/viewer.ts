@@ -14,7 +14,6 @@ export type OfficeViewer = {
   clearFind(): void;
   zoomIn(): void | Promise<void>;
   zoomOut(): void | Promise<void>;
-  fitWidth(): void | Promise<void>;
   fitPage(): void | Promise<void>;
   setScale(scale: number): void | Promise<void>;
   getScale(): number;
@@ -35,7 +34,6 @@ type Callbacks = {
   signal: AbortSignal;
   error: (error: unknown) => void;
   externalLink: (url: string) => void;
-  scale: (scale: number) => void;
   position: (page: OfficePages) => void;
 };
 
@@ -145,7 +143,7 @@ export async function loadOfficeReader(
   format: OfficeFormat, host: HTMLElement, bytes: ArrayBuffer, wasmUrl: string, password: string | undefined,
   callbacks: Callbacks,
 ): Promise<OfficeReader> {
-  const { signal, error, position, externalLink, scale } = callbacks;
+  const { signal, error, position, externalLink } = callbacks;
   const [math, chartEx, threeD, regionMap, tiff] = await renderers();
   signal.throwIfAborted();
   const options = {
@@ -155,7 +153,6 @@ export async function loadOfficeReader(
   };
   const actions = {
     enableHyperlinks: true,
-    onScaleChange: scale,
     onError: error,
   };
   // A viewer borrows the parsed model. Attach both lifetimes before awaiting

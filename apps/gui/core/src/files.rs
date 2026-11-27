@@ -1010,22 +1010,10 @@ pub async fn preview(
             out.empty = md.trim().is_empty();
             out.html = khor_node::preview::html(&md);
         }
-        // **The bytes where the browser can draw them, the words where
-        // it cannot** (工作区批⑤). Half a PDF is a broken PDF, so a cut
-        // one carries no bytes and the face says why — the same rule a
-        // picture is under; the words road is left to the fallback,
-        // which does not need the whole file to be useful but would
-        // then be answering about half a document without saying so.
-        khor_node::preview::Kind::Pdf => {
-            if khor_node::preview::PDF_HERE {
-                if !cut {
-                    out.data = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                }
-            } else {
-                let md = khor_node::preview::markdown(path, &bytes)?;
-                out.empty = md.trim().is_empty();
-                out.html = khor_node::preview::html(&md);
-            }
+        // The GUI renders the original PDF on every platform. As with
+        // images, a partial file cannot be used for this preview.
+        khor_node::preview::Kind::Pdf if !cut => {
+            out.data = base64::engine::general_purpose::STANDARD.encode(&bytes);
         }
         _ => {}
     }
@@ -1043,6 +1031,34 @@ mod office_preview_tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn previews_use_original_pdf_bytes_within_the_size_limit() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = Scratch(std::env::temp_dir().join(format!("khor-pdf-preview-{stamp}")));
+        std::fs::create_dir(&dir.0).unwrap();
+        let path = dir.0.join("example.pdf");
+        let bytes = include_bytes!("../../dev/lab/data/workspace/media/preview-check.pdf");
+        std::fs::write(&path, bytes).unwrap();
+        let name = path.to_str().unwrap();
+
+        let raw = preview(&dir.0, "", name, false).await.unwrap();
+        assert_eq!(raw.kind, "pdf");
+        assert!(!raw.cut && raw.html.is_empty());
+        assert_eq!(STANDARD.decode(raw.data).unwrap(), bytes);
+
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(khor_node::preview::cap(name) as u64 + 1)
+            .unwrap();
+        let raw = preview(&dir.0, "", name, false).await.unwrap();
+        assert!(raw.cut && raw.data.is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

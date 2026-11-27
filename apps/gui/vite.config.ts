@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { defineConfig, mergeConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -64,7 +64,7 @@ const preloadEveryChunk: Plugin = {
           }
         } else if (/\/(docx|pptx|xlsx)_parser_bg-[\w-]+\.wasm$/.test(href)) {
           office.push({ href, rel: "preload", as: "fetch" });
-        } else if (/\/(render-worker-|(?:docx|pptx|xlsx)-source-worker-)/.test(href)) {
+        } else if (/\/(render-worker-|(?:docx|pptx|xlsx)-source-worker-|pdf\.worker\.min-)/.test(href)) {
           office.push({ href, rel: "modulepreload" });
         }
       }
@@ -84,8 +84,8 @@ const preloadEveryChunk: Plugin = {
   },
 };
 
-const officeNotices: Plugin = {
-  name: "khor-office-notices",
+const previewAssets: Plugin = {
+  name: "khor-preview-assets",
   generateBundle() {
     for (const name of ["LICENSE", "THIRD_PARTY_NOTICES.md"]) {
       this.emitFile({
@@ -94,13 +94,22 @@ const officeNotices: Plugin = {
         source: readFileSync(new URL(`./node_modules/@silurus/ooxml/${name}`, import.meta.url)),
       });
     }
+    const pdf = new URL("./node_modules/pdfjs-dist/", import.meta.url);
+    this.emitFile({ type: "asset", fileName: "licenses/pdfjs/LICENSE", source: readFileSync(new URL("LICENSE", pdf)) });
+    for (const directory of ["cmaps", "standard_fonts", "wasm", "iccs"]) {
+      for (const file of readdirSync(new URL(directory + "/", pdf), { withFileTypes: true })) {
+        if (!file.isFile()) continue;
+        const relative = directory + "/" + file.name;
+        this.emitFile({ type: "asset", fileName: "pdf-assets/" + relative, source: readFileSync(new URL(relative, pdf)) });
+      }
+    }
   },
 };
 
 // 1430, not tauri's usual 1420: mandala's dev server owns 1420 on this
 // machine and the two must be able to run side by side.
 export const sharedConfig = defineConfig({
-  plugins: [react(), tailwindcss(), katexWoff2Only, officeNotices],
+  plugins: [react(), tailwindcss(), katexWoff2Only, previewAssets],
   resolve: { alias: {
     "@": path.resolve(import.meta.dirname, "src"),
     "@office-parser": path.resolve(import.meta.dirname, "node_modules/@silurus/ooxml/dist"),

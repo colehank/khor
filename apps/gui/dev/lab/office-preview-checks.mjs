@@ -34,10 +34,11 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const viewer = page.locator(`[data-office-preview="${format}"][data-ready]`);
     await viewer.waitFor({timeout:20_000});
     await visibleCanvas(viewer).waitFor();
-    const icons = await viewer.locator('[data-office-toolbar] button svg').evaluateAll(nodes =>
+    const icons = await page.locator('[data-office-toolbar]:visible button:visible svg').evaluateAll(nodes =>
       nodes.map(icon => {
         const style = getComputedStyle(icon);
-        return [style.width, style.height, style.getPropertyValue('--affordance').trim()];
+        const token = icon.closest('[data-glass-item]') ? '--ctl-glyph' : '--affordance';
+        return [style.width, style.height, style.getPropertyValue(token).trim()];
       }));
     assert(icons.length > 0 && icons.every(([width,height,token]) => width === token && height === token),
       `Office tools use the same glyph size as the file reader (${JSON.stringify(icons)})`);
@@ -51,10 +52,7 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     return viewer;
   };
   const text = page.locator('[data-look="doc"]:visible');
-  const tool = async key => {
-    if (key === 'office-fit-page') await page.locator('[data-office-zoom]').click();
-    await page.locator(`[data-${key}]`).click();
-  };
+  const tool = async key => page.locator(`[data-${key}]`).click();
   const togglePane = async (key, pane, open) => {
     const trigger = page.locator(`[data-${key}]`);
     await tool(key);
@@ -364,12 +362,31 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await slides.getByText('3 / 3',{exact:true}).waitFor();
     await slidePages.locator('[data-office-thumbnail="3"][aria-current="page"]').waitFor();
     await togglePane('office-pages',slidePages,false);
-    await tool('office-zoom-in');
+    if (mobile) {
+      assert.equal(await slides.locator('[data-preview-zoom], [data-office-zoom]').count(),0,
+        'A touch preview uses pinch without mounting zoom buttons');
+      await visibleCanvas(slides).evaluate(canvas => {
+        const box = canvas.getBoundingClientRect();
+        const start = box.left + box.width * .4, y = box.top + box.height * .5;
+        const send = (type, touches) => {
+          const event = new Event(type,{bubbles:true,cancelable:true});
+          Object.defineProperty(event,'touches',{value:touches.map(clientX => ({target: canvas,clientX,clientY:y}))});
+          canvas.dispatchEvent(event);
+        };
+        send('touchstart',[start - 30,start + 30]);
+        send('touchmove',[start - 55,start + 55]);
+        send('touchend',[]);
+      });
+    } else {
+      const plus = slides.locator('[data-preview-zoom-in]');
+      const box = await plus.boundingBox();
+      await page.mouse.move(box.x + box.width / 2,box.y + box.height / 2);
+      await plus.click();
+    }
     await page.waitForFunction(initial => {
       const canvas = document.querySelector('[data-office-preview="pptx"] canvas');
       return canvas && canvas.getBoundingClientRect().width > initial;
     },slideRect.width);
-    await tool('office-fit-page');
 
     if (mobile) await open('xlsx');
     else await page.locator('[data-file-path$="/'+files.xlsx+'"]').click();
@@ -463,12 +480,13 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await picker.locator(`[data-file-path="/preview/project/office/${files.docx}"]`).click();
     const sessionOffice = page.locator('[data-file-page] [data-office-toolbar]:visible');
     await sessionOffice.waitFor({timeout:20_000});
-    const gap = () => sessionOffice.evaluate(toolbar => {
+    const gap = () => sessionOffice.evaluate((toolbar,mobile) => {
       const file = toolbar.closest('[data-file-page]');
       const location = file.querySelector('[data-content-toolbar="file"]');
-      const edge = location ? location.getBoundingClientRect().bottom : file.getBoundingClientRect().top;
-      return toolbar.getBoundingClientRect().top - edge;
-    });
+      if (mobile) return toolbar.getBoundingClientRect().top - file.getBoundingClientRect().top;
+      const office = file.querySelector('[data-office-preview][data-ready]');
+      return office.getBoundingClientRect().top - location.getBoundingClientRect().bottom;
+    },mobile);
     if (!mobile) {
       // The desktop browser does not inherit AppKit's window buttons.
       await page.locator('html').evaluate(root => root.setAttribute('data-traffic',''));
@@ -486,6 +504,9 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       assert(Math.abs(await gap())<=1,'The full sheet reserves the status bar once');
       assert((await sessionOffice.boundingBox()).y>=sessionEnvironment.safeTop,'Office controls clear the status bar');
       await page.screenshot({path:path.join(report,name+'-session-full.png')});
+    } else {
+      assert.equal(await page.locator('[data-content-reading-tools] [data-office-toolbar]').count(),1,
+        'Office actions share the session file location row');
     }
 
     await page.route(/_parser_bg[^/]*\.wasm(?:\?|$)/, route =>

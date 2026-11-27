@@ -88,7 +88,7 @@ import { FilesPane } from "@/views/FilesPane";
 import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, defaultFaceOf, FileView, rendererOf, type Draft } from "@/views/FileView";
-import { officeReadingLabEnabled } from "@/components/OfficePreview";
+import { officeFormat } from "@/components/OfficePreview";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { RevisionView, revisionRenders, shortId } from "@/views/FileHistory";
 import { closeWorkspaceTab, openWorkspaceTab, pinWorkspaceTab, renameWorkspaceFiles, selectWorkspaceTab, selectedWorkspaceTarget, workspaceTabId, type WorkspaceTarget } from "@/views/workspace/workspace-tabs";
@@ -327,8 +327,7 @@ export function WorkspacePane({
   const mid = useRef<HTMLDivElement>(null);
   const handoff = useFileHandoff(machine, file ?? "", file !== null, mid);
   const [readingToolsSeat, setReadingToolsSeat] = useState<HTMLDivElement | null>(null);
-  // Lab comparison of the workspace's existing action group and the Office row.
-  const previewReadingTools = !narrow && file !== null && officeReadingLabEnabled(file);
+  const previewReadingTools = !narrow && file !== null && rev === null && officeFormat(file) !== null;
   /** Where to put the reader once the face has changed (a source line). */
   const restore = useRef<number | null>(null);
   /** A ✓ waiting on its save before the face goes back to reading. */

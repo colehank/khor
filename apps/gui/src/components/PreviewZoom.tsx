@@ -37,11 +37,6 @@ function previewGround(lens: DOMRect, panel: HTMLElement, pixel: CanvasRendering
   return groundUnder(x, y, panel);
 }
 
-export function floatingZoomLabEnabled(): boolean {
-  return "__KHOR_LAB__" in window &&
-    new URLSearchParams(window.location.search).get("reading-tools") === "top";
-}
-
 export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
   return useCoarse() ? null : <HoverZoom onZoom={onZoom}/>;
 }

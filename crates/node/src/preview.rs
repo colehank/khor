@@ -15,8 +15,8 @@
 //! **Three things are deliberately not on that pipeline.** Images and
 //! SVG, because the browser already decodes them and handing bytes to
 //! an `<img>` is less code and a better picture than anything here
-//! could produce. PDF, for the same reason, on the platforms whose
-//! browser has a viewer ([`PDF_HERE`]). And md, csv and tsv, which are
+//! could produce. The GUI renders PDF pages from the original bytes.
+//! And md, csv and tsv, which are
 //! **text** — calling them documents cost them saving, the save
 //! contract, the three-way merge and the change gutter, and the
 //! rendered view they actually wanted is one the screen can draw from
@@ -43,13 +43,8 @@
 //! renders. `pdf-extract` costs 19. `pdfboss` costs **4**, because text
 //! extraction is all it claims to do.
 //!
-//! What changed is what that extraction is for. 「pdf 你咋转成字符了,
-//! 应该直接预览」(the user, 2026-09-14): where the browser draws PDFs
-//! the bytes go straight to it, and these four are what Linux and
-//! Android get instead of an empty frame. **pdf.js still never entered
-//! the question** — a megabyte of frontend to do what three of the five
-//! platforms already do natively, and the other two are the two khor
-//! would have had to ship it to anyway.
+//! The text-extraction path remains available separately from rendering
+//! the original pages in the GUI.
 //!
 //! ⚠️ **`office_oxide` is young** — first published 2026-04-28, 0.1.x,
 //! and khor took 0.1.11. What was done about that instead of hoping:
@@ -127,7 +122,7 @@ pub enum Kind {
     /// Markdown, whether it started as markdown or was turned into it.
     Doc,
     /// Hand the bytes to the browser as a PDF, where the browser has a
-    /// PDF viewer ([`PDF_HERE`]); extract its words where it does not.
+    /// PDF viewer or separate text extraction.
     ///
     /// **Its own kind rather than an image**, because the two failures
     /// differ: a platform with no viewer still has something to show
@@ -217,17 +212,6 @@ pub fn kind(path: &str) -> Kind {
 /// the same page is served to a phone looking at another machine's
 /// khor.
 ///
-/// macOS and iOS (WebKit, PDFKit behind it) and Windows (WebView2,
-/// Chromium's viewer) draw one. **WebKitGTK does not ship a PDF
-/// viewer** and Android's WebView does not either — there the words are
-/// what khor can honestly show, and the face says so out loud rather
-/// than drawing an empty frame.
-pub const PDF_HERE: bool = cfg!(any(
-    target_os = "macos",
-    target_os = "ios",
-    target_os = "windows"
-));
-
 /// A file's bytes as markdown, whatever it started as.
 ///
 /// **Answers `Ok("")` for a document with no words in it**, which is a
