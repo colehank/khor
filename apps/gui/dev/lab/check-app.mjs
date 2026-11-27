@@ -172,10 +172,18 @@ async function inspect(browser, scene, size, data = {}) {
     const layout = await page.evaluate(kind => {
       const head = document.querySelector('[data-session-tabs]')?.closest('[data-region-head]');
       const toolbar = [...document.querySelectorAll(`[data-session-side] [data-content-toolbar="${kind}"]`)].find(el => el.getClientRects().length);
-      const box = el => el ? {top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom} : null;
+      const box = el => {
+        if (!el) return null;
+        const {left,right,top,bottom} = el.getBoundingClientRect();
+        return {left,right,top,bottom};
+      };
       const controls = toolbar ? [...toolbar.querySelectorAll('button')].filter(el => el.getClientRects().length && !el.matches(':disabled,[aria-disabled="true"]')) : [];
       const contentHead=document.querySelector('[data-session-content-head]')?.closest('[data-region-head]');
+      const groups = [...toolbar?.children ?? []].filter(el => el.getClientRects().length);
       return {head:box(head),contentHead:box(contentHead),nested:!!head?.querySelector('[data-content-tabs]'), toolbar:box(toolbar), side:box(document.querySelector('[data-session-side]')),
+        tabs:box(contentHead?.querySelector('[data-tab-capsule]')),firstGroup:box(groups[0]),lastGroup:box(groups.at(-1)),
+        listNav:box(document.querySelector('[data-wide-top] [data-landing-pair]')),
+        listHead:box(document.querySelector('[data-side-head] [data-pane-bar]')),
         seam:box(document.querySelector('[data-session-side] [data-side-seam]')),
         panes:box(document.querySelector('[data-session-panes]')), controlsReachable:controls.length > 0 && controls.every(el => {
         const rect = el.getBoundingClientRect();
@@ -190,6 +198,12 @@ async function inspect(browser, scene, size, data = {}) {
     assert(Math.abs(layout.side.top-layout.head.top)<=1, `The content column starts at the same top edge (${phase}): ${JSON.stringify(layout)}`);
     assert(Math.abs(layout.seam.top-layout.head.top)<=1, `The content resize handle starts at the shared header edge (${phase}): ${JSON.stringify(layout)}`);
     assert(layout.side.bottom <= layout.panes.bottom + 1, `The inset column must stay inside the session body (${phase}): ${JSON.stringify(layout)}`);
+    assert(layout.tabs && layout.firstGroup && layout.lastGroup &&
+      Math.abs(layout.tabs.left-layout.firstGroup.left)<=1 && Math.abs(layout.tabs.right-layout.lastGroup.right)<=1,
+      `The sidebar tabs and location toolbar share their outer edges (${phase})`);
+    assert(layout.listNav && layout.listHead &&
+      Math.abs(layout.listNav.left-layout.listHead.left)<=1 && Math.abs(layout.listNav.right-layout.listHead.right)<=1,
+      `The navigation and list heading share their outer edges (${phase})`);
     assert(layout.controlsReachable, `The session tabs must not cover the content controls (${phase})`);
     await page.screenshot({path:path.join(report,`${name}-${phase}.png`)});
   }

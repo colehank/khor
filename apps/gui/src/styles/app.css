@@ -526,11 +526,14 @@ aside[data-side] {
    starts at the row inset the title row ends with: the strip fits, its
    right edge on the title row's, 「更多」 over the search circle — folded
    or not. */
-/* UX-19: wherever there are no window buttons — a finger, the web face,
-   a Mac window in fullscreen (the stamp is dropped there) — the first row
-   starts where the title under it does (the list's 20, `SideHead`).
-   ⚠️ 墓碑: under a finger only, at the row inset. */
-:root:not([data-traffic]) :is([data-wide-top], [data-folded-lead]) {
+/* The wide navigation and the title row share the list's insets. */
+[data-wide-band] :is([data-wide-top], [data-side-head]) {
+  padding-inline: var(--gap-group);
+}
+:root[data-traffic] [data-wide-top] {
+  padding-inline-start: var(--wide-lead-start);
+}
+:root:not([data-traffic]) [data-folded-lead] {
   padding-inline-start: var(--gap-group);
 }
 

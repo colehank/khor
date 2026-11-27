@@ -377,14 +377,10 @@ export function SideHead({
       // the glass the band wears when a list is under it is behind it.
       className={cn(
         "relative flex min-w-0 flex-none items-center select-none",
-        // Wide: the left column's second row, the canvas's 48 with its
-        // name on the list's 20 (paddingLeft below).
-        narrow ? "min-h-list-head pr-group" : "min-h-12 pr-row pb-1.5",
+        narrow ? "min-h-list-head pr-group" : "min-h-12 pb-1.5",
       )}
-      // Wide, this is the list column's second row (方案 B), under the
-      // window's top row: the name on the list's own 20. Narrow, it is the
-      // screen's first row, after the platform's corner.
-      style={{ paddingLeft: narrow ? START : "var(--gap-group)" }}
+      // At phone width this first row clears the platform's corner.
+      style={narrow ? { paddingLeft: START } : undefined}
     >
       {/* The landing's head sits here. `hidden` while the box is widened
           — the same seat, the other range — and while there is nothing

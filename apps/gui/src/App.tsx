@@ -3748,10 +3748,10 @@ export default function App() {
                   // **Across the column** (UX-19, the owner 2026-10-05): the
                   // window buttons' room at the left where there are window
                   // buttons (`app.css`: the title row's inset where there are
-                  // not), then the five-seat capsule to the title row's right
-                  // inset (`pe-row`) — 更多 over the search circle. ⚠️ 墓碑:
+                  // not), then the controls to the title row's right inset —
+                  // 更多 over the search circle. ⚠️ 墓碑:
                   // right-aligned, its own width (「这要右对齐」, 10-02).
-                  className="flex h-pane-head flex-none items-center ps-wide-lead-start pe-row select-none"
+                  className="flex h-pane-head flex-none items-center select-none"
                 >
                   {/* Folded, the strip stands in the content's lead
                       (`foldedLead`) and only there: a second copy in the
