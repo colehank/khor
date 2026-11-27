@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
 import { feel } from "@/lib/haptics";
 import { MoreSection } from "@/views/more/MorePage";
@@ -29,137 +28,80 @@ function relayAddress(url: string) {
 
 const relayKey = (url: string) => relayAddress(url)?.href ?? url;
 
-function RelayPaths({ choices, devices, settings, manual, busy, sources, addRelay, onPick, onRemove }: {
-  choices: RelayChoices;
-  devices: DeviceRow[];
-  settings: NetworkSettings;
-  manual: boolean;
-  busy: boolean;
-  sources: ReactNode;
-  addRelay: ReactNode;
-  onPick: (url: string | null) => void;
-  onRemove: (url: string) => void;
-}) {
-  // A relay's live reading is host and non-default port. Only a unique
-  // match can identify a configured URL, which also carries its scheme.
-  const selectable = new Map(choices.in_use.map((url) => [relayKey(url), url]));
-  const configured = new Map([...selectable, ...choices.mine.map((url) => [relayKey(url), url] as const)]);
-  const configuredByHost = new Map<string, string[]>();
-  for (const url of configured.values()) {
-    const host = relayAddress(url)?.host;
-    if (!host) continue;
-    const entries = configuredByHost.get(host) ?? [];
-    entries.push(url);
-    configuredByHost.set(host, entries);
-  }
-
-  const used = new Set<string>();
-  const otherRelays = new Map<string | null, string>();
-  const forwarding = new Set<string | null>();
+function CurrentRelayPaths({ devices, read, since }: { devices: DeviceRow[]; read: boolean; since: number }) {
+  // The observed paths come from the device table alone. A saved relay
+  // configuration can change before the running endpoint picks it up.
+  const routes = new Map<string, { label: string; forwarding: boolean; devices: Set<string> }>();
   for (const device of devices) {
-    if (device.me) continue;
-    if (device.hop === "forwarded") forwarding.add(device.via);
-    if (device.hop !== "relay") continue;
-    const matches = device.relay ? configuredByHost.get(device.relay.toLowerCase()) ?? [] : [];
-    if (matches.length === 1) {
-      used.add(matches[0]);
-      continue;
-    }
-    const advertised = device.relay && matches.length === 0
-      && !settings.pending_restart && !settings.invalid && settings.profile.policy.advertised_relays;
-    otherRelays.set(device.relay, advertised ? gui.net_summary_advertised : gui.net_relay_unidentified);
+    if (device.me || (device.hop !== "relay" && device.hop !== "forwarded")) continue;
+    const forwarding = device.hop === "forwarded";
+    const label = forwarding
+      ? device.via || gui.net_relay_unknown_device
+      : device.relay || gui.net_relay_unknown_server;
+    const key = `${device.hop}:${label}`;
+    const route = routes.get(key) ?? { label, forwarding, devices: new Set<string>() };
+    route.devices.add(device.shown);
+    routes.set(key, route);
   }
 
-  const preferred = choices.preferred && relayKey(choices.preferred);
-  const entries = [...configured];
-  const configuredRow = ([key, url]: [string, string], inPool: boolean) => {
-    const mine = choices.mine.includes(url);
-    const candidate = selectable.get(key);
-    const selected = key === preferred;
-    return <RelayPathRow key={url} label={url} kind="configured"
-      source={mine ? gui.net_summary_custom_services : undefined}
-      active={(!inPool || manual) && used.has(url)} inCurrentList={!inPool}
-      plainHttp={url.startsWith("http://")} keyed={choices.keyed.includes(url)}
-      preferred={inPool && selected} busy={busy}
-      pick={inPool && manual && candidate ? () => onPick(selected ? null : candidate) : undefined}
-      remove={inPool && mine ? () => onRemove(url) : undefined} />;
-  };
-  const current = [
-    ...(manual ? [] : entries.filter(([, url]) => used.has(url)).map((entry) => configuredRow(entry, false))),
-    ...[...otherRelays].map(([host, source]) => (
-      <RelayPathRow key={host ?? "unnamed-relay"} label={host ?? gui.net_relay_unknown_server}
-        kind="relay" source={source} active inCurrentList />
-    )),
-    ...[...forwarding].map((via) => (
-      <RelayPathRow key={`via:${via ?? ""}`} label={via ?? gui.net_relay_unknown_device}
-        kind="forwarding" source={gui.net_summary_peer} active inCurrentList />
-    )),
-  ];
-
-  const currentSection = (!manual || current.length > 0) && (
+  return (
     <section data-settings-subgroup data-relay-current className="py-in">
-      <SectionHeading className="px-row">{manual ? gui.net_relay_other_active : gui.relays_in_use}</SectionHeading>
+      <SectionHeading className="px-row">{gui.relays_in_use}</SectionHeading>
       <div data-settings-card>
-        {current.length ? current : <p className="text-callout text-muted-foreground">{gui.net_detail_no_relay_routes}</p>}
+        {!read ? <Waiting since={since} /> : !routes.size ? (
+          <p className="text-callout text-muted-foreground">{gui.net_detail_no_relay_routes}</p>
+        ) : [...routes].sort(([a], [b]) => a.localeCompare(b)).map(([key, route]) => (
+          <div key={key} data-more-row data-relay-path={route.forwarding ? "forwarding" : "relay"}
+            className="flex flex-col justify-center">
+            <span data-selectable className="text-body [overflow-wrap:anywhere]">{route.label}</span>
+            <span data-relay-devices className="text-callout text-muted-foreground [overflow-wrap:anywhere]">
+              {[...(route.forwarding ? [gui.net_summary_peer] : []), ...[...route.devices].sort()].join(" · ")}
+            </span>
+          </div>
+        ))}
       </div>
     </section>
   );
+}
 
-  const candidates = entries.filter(([key]) => selectable.has(key));
-  const managed = entries.filter(([key, url]) => choices.mine.includes(url) && (!manual || !selectable.has(key)));
-  const pool = (
-    <Collapsible key={manual ? "manual" : "auto"} defaultOpen={manual}
-      data-settings-subgroup data-relay-pool>
-      {manual ? <SectionHeading className="px-row pt-in">{gui.net_relay_pool}</SectionHeading> : (
-        <CollapsibleTrigger type="button" data-relay-pool-trigger
-          className="group flex min-h-touch w-full items-center justify-between gap-row px-row py-in text-left text-body hover:bg-fill focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
-          {gui.net_relay_pool}
-          <IconChevronRight className="size-affordance flex-none text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
-        </CollapsibleTrigger>
-      )}
-      <CollapsibleContent data-relay-pool-content>
-        <div data-settings-card>
-          {manual && <section data-settings-subgroup data-relay-candidates className="pt-in">
-            <SectionHeading className="px-row text-muted-foreground">{gui.net_relay_candidates}</SectionHeading>
-            <div data-settings-card>
-              {candidates.length
-                ? candidates.map((entry) => configuredRow(entry, true))
-                : <p className="text-callout text-muted-foreground">{gui.net_relay_no_candidates}</p>}
-            </div>
-          </section>}
-          <div data-more-section="network-public-infrastructure" data-settings-subgroup className="pt-in">
-            <SectionHeading className="px-row text-muted-foreground">{gui.net_summary_public_infrastructure}</SectionHeading>
-            <div data-settings-card>{sources}</div>
-          </div>
-          {managed.map((entry) => configuredRow(entry, true))}
-          {addRelay}
-        </div>
+function RelayDisclosure({ section, label, value, status, children }: {
+  section: "preferred" | "pool";
+  label: string;
+  value?: string;
+  status?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Collapsible data-settings-subgroup data-relay-section={section}>
+      <CollapsibleTrigger type="button" data-relay-disclosure
+        className="group flex min-h-touch w-full items-center gap-row px-row py-in text-left text-body hover:bg-fill focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+        <span className="flex-none">{label}</span>
+        <span data-relay-value title={value} className="min-w-0 flex-1 truncate text-right text-muted-foreground">{value}</span>
+        <IconChevronRight className="size-affordance flex-none text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+      </CollapsibleTrigger>
+      {status && <p role="status" data-relay-config-status className="px-row pb-in text-callout text-muted-foreground">{status}</p>}
+      <CollapsibleContent data-relay-disclosure-content>
+        <div data-settings-card>{children}</div>
       </CollapsibleContent>
     </Collapsible>
   );
-
-  return manual ? <>{pool}{currentSection}</> : <>{currentSection}{pool}</>;
 }
 
-function RelayPathRow({ label, kind, source, active, inCurrentList, plainHttp, keyed, preferred, busy, pick, remove }: {
-  label: string;
-  kind: "configured" | "relay" | "forwarding";
-  source?: string;
-  active: boolean;
-  inCurrentList?: boolean;
-  plainHttp?: boolean;
-  keyed?: boolean;
+function RelayServerRow({ url, mine, keyed, preferred, busy, pick, remove }: {
+  url: string;
+  mine: boolean;
+  keyed: boolean;
   preferred?: boolean;
-  busy?: boolean;
+  busy: boolean;
   pick?: () => void;
   remove?: () => void;
 }) {
   const Row = pick ? "button" : "div";
-  const note = [source, plainHttp && gui.relays_scheme_http, keyed && gui.relays_keyed].filter(Boolean).join(" · ");
-  const showLiveStatus = active && !inCurrentList;
+  const note = [mine && gui.net_summary_custom_services, url.startsWith("http://") && gui.relays_scheme_http,
+    keyed && gui.relays_keyed].filter(Boolean).join(" · ");
   return (
-    <div data-more-row data-relay-path={kind} data-relay-active={active}
-      data-relay-mine={remove ? label : undefined} className="flex min-w-0 items-center gap-row">
+    <div data-more-row data-relay-path="configured" data-relay-mine={remove ? url : undefined}
+      className="flex min-w-0 items-center gap-row">
       <Row className={`flex min-w-0 flex-1 items-center gap-row text-left ${pick ? "group/relay -my-in min-h-touch rounded-sm py-in focus-visible:outline-2 focus-visible:outline-ring" : ""}`}
         {...(pick ? {
           type: "button" as const,
@@ -173,14 +115,11 @@ function RelayPathRow({ label, kind, source, active, inCurrentList, plainHttp, k
           "data-relay-pick": "",
         } : {})}>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span data-selectable={pick ? undefined : ""} className="text-body [overflow-wrap:anywhere]">{label}</span>
-          {(note || showLiveStatus) && <span data-relay-keyed={keyed ? "" : undefined} className="text-callout text-muted-foreground">
-            {note}
-            {showLiveStatus && <>{note && " · "}<span data-relay-path-status>{gui.relays_in_use}</span></>}
-          </span>}
+          <span data-selectable={pick ? undefined : ""} className="text-body [overflow-wrap:anywhere]">{url}</span>
+          {note && <span data-relay-keyed={keyed ? "" : undefined} className="text-callout text-muted-foreground">{note}</span>}
         </span>
         {pick && (
-          <span aria-hidden="true" data-setting-trail={remove ? undefined : ""} data-relay-selection-icon={preferred ? "selected" : "unselected"}
+          <span aria-hidden="true" data-setting-trail data-relay-selection-icon={preferred ? "selected" : "unselected"}
             className={`grid size-affordance flex-none place-items-center rounded-full border ${preferred ? "border-foreground text-foreground" : "border-muted-foreground group-hover/relay:border-foreground"}`}>
             {preferred && <IconCheck className="size-full" />}
           </span>
@@ -192,10 +131,11 @@ function RelayPathRow({ label, kind, source, active, inCurrentList, plainHttp, k
 }
 
 /** Mounting is reading: the page is drawn only while it is on screen. */
-export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
+export function NetSettings({ detail, onOpenDetail, devices, devicesRead, advancedRows }: {
   detail: NetworkDetail | null;
   onOpenDetail: (detail: NetworkDetail) => void;
   devices: DeviceRow[];
+  devicesRead: boolean;
   advancedRows: ReactNode;
 }) {
   const [choices, setChoices] = useState<RelayChoices | null>(null);
@@ -204,8 +144,6 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
   const [since] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  // The manual list can stay open without a preferred relay.
-  const [manualSelection, setManualSelection] = useState(false);
   const [writingRelay, setWritingRelay] = useState(false);
   const [readAttempt, setReadAttempt] = useState(0);
 
@@ -241,15 +179,11 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
     }
   };
 
-  const savePreferred = (url: string | null, stayManual: boolean) => {
-    if (url === (choices?.preferred ?? null)) {
-      setManualSelection(stayManual);
-      return;
-    }
+  const savePreferred = (url: string | null) => {
+    if (url === (choices?.preferred ?? null)) return;
     void write(async () => {
       await setPreferredRelay(url);
       setChoices((before) => before && { ...before, preferred: url });
-      setManualSelection(stayManual);
     });
   };
 
@@ -262,44 +196,44 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
     return error ? <RegionState state="error" message={error} onRetry={retry} /> : <Waiting since={since} />;
   }
 
-  const manual = manualSelection || !!choices?.preferred;
   const renderRelays = (sources: ReactNode, policyBusy: boolean) => {
     const busy = writingRelay || policyBusy;
+    const candidates = new Map(choices?.in_use.map((url) => [relayKey(url), url]));
+    const own = new Set(choices?.mine.map(relayKey));
+    const keyed = new Set(choices?.keyed.map(relayKey));
+    const preferred = choices?.preferred ? relayKey(choices.preferred) : null;
     return <>
       <MoreSection name="relay-paths">
+        <CurrentRelayPaths devices={devices} read={devicesRead} since={since} />
         {choices ? <>
-          <div className="flex flex-wrap items-center justify-between gap-x-row gap-y-in">
-            <span className="text-body">{gui.net_relay_selection}</span>
-            <SegmentedControl
-              label={gui.net_relay_selection}
-              value={manual ? "manual" : "auto"}
-              options={[
-                { key: "auto", label: gui.automatic, disabled: busy },
-                { key: "manual", label: gui.net_relay_select_manual, disabled: busy },
-              ]}
-              onChange={(mode) => {
-                if (mode === "manual") setManualSelection(true);
-                else savePreferred(null, false);
-              }}
-              mark={{ "data-relay-selection": "" }}
-            />
-            {manual && choices.preferred && <p className="w-full text-callout text-muted-foreground">
-              {gui.relays_preferred_note}
-            </p>}
-            {!network.invalid && network.pending_restart && <p role="status" data-relay-config-status className="w-full text-callout text-muted-foreground">
-              {gui.net_profile_restart}
-            </p>}
-          </div>
           {error && <p data-relays-error role="alert" className="text-callout text-destructive">{error}</p>}
-          <RelayPaths choices={choices} devices={devices} settings={network} manual={manual} busy={busy} sources={sources}
-            addRelay={<ActionRow name="relay-add" label={gui.relays_mine} actionLabel={gui.relays_add}
-              onPress={() => setAdding(true)} busy={busy} mark={{ "data-relay-add": "" }} />}
-            onPick={(url) => savePreferred(url, true)} onRemove={(url) => {
-              void write(async () => {
-                const next = await setRelays(choices.mine.filter((entry) => entry !== url).map(kept), choices.only_mine);
-                setChoices(next);
-              });
-            }} />
+          <RelayDisclosure section="preferred" label={gui.relays_preferred}
+            value={choices.preferred || gui.net_relay_select_auto}
+            status={!network.invalid && network.pending_restart ? gui.net_profile_restart : undefined}>
+            {candidates.size > 0 ? <>
+              <p className="text-callout text-muted-foreground">{gui.relays_preferred_note}</p>
+              {[...candidates].map(([key, url]) => (
+                <RelayServerRow key={key} url={url} mine={own.has(key)} keyed={keyed.has(key)}
+                  preferred={key === preferred} busy={busy} pick={() => savePreferred(key === preferred ? null : url)} />
+              ))}
+            </> : <p className="text-callout text-muted-foreground">{gui.net_relay_no_candidates}</p>}
+          </RelayDisclosure>
+          <RelayDisclosure section="pool" label={gui.net_relay_manage_pool}>
+            <div data-more-section="network-public-infrastructure" data-settings-subgroup className="pt-in">
+              <SectionHeading className="px-row text-muted-foreground">{gui.net_summary_public_infrastructure}</SectionHeading>
+              <div data-settings-card>{sources}</div>
+            </div>
+            {choices.mine.map((url) => (
+              <RelayServerRow key={url} url={url} mine keyed={keyed.has(relayKey(url))} busy={busy} remove={() => {
+                void write(async () => {
+                  const next = await setRelays(choices.mine.filter((entry) => entry !== url).map(kept), choices.only_mine);
+                  setChoices(next);
+                });
+              }} />
+            ))}
+            <ActionRow name="relay-add" label={gui.relays_mine} actionLabel={gui.relays_add}
+              onPress={() => setAdding(true)} busy={busy} mark={{ "data-relay-add": "" }} />
+          </RelayDisclosure>
         </> : error ? <RegionState state="error" message={error} onRetry={retry} /> : <Waiting since={since} />}
       </MoreSection>
       {choices && adding && <RelayAddDialog

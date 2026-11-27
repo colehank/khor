@@ -10,11 +10,13 @@ import { MoreFrame, MoreSection } from "@/views/more/MorePage";
 
 export function ConnectionPage({
   devices,
+  devicesRead,
   onClose,
   onChanged,
 }: {
   /** The shell's polled table supplies active relay paths and network membership. */
   devices: DeviceRow[];
+  devicesRead: boolean;
   onClose: () => void;
   /** The device table changed (暂停 paints on every machine's row). */
   onChanged: () => void;
@@ -62,7 +64,7 @@ export function ConnectionPage({
       detailTitle={detail ? networkDetailTitle(detail) : undefined}
       onClose={() => detail ? setDetail(null) : onClose()}
     >
-      <NetSettings detail={detail} onOpenDetail={setDetail} devices={devices} advancedRows={advancedRows} />
+      <NetSettings detail={detail} onOpenDetail={setDetail} devices={devices} devicesRead={devicesRead} advancedRows={advancedRows} />
     </MoreFrame>
   );
 }
