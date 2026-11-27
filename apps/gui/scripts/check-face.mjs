@@ -6733,16 +6733,11 @@ ${serverLog}`);
 
   // vi) the PDF, both halves.
   if (await openFile("report.pdf")) {
-    const frame = await until(5_000, async () => (await page.locator("[data-pdf-frame]").count()) === 1);
-    const src = frame ? await page.locator("[data-pdf-frame]").getAttribute("src") : "";
-    console.log(`pdf: frame ${frame}, src ${String(src).slice(0, 12)}`);
-    if (!frame || !String(src).startsWith("blob:")) {
-      fail(
-        `a PDF drew ${frame ? `a frame at ${src}` : "no frame"} — the browser draws this one, and ` +
-          "the bytes reach it as a blob rather than a data URL (src/views/FileView.tsx)",
-      );
-    }
-    // …and the other platform, where there is no viewer at all.
+    const rendered = await until(10_000, async () =>
+      (await page.locator("[data-pdf-preview][data-ready] .canvasWrapper canvas").count()) > 0,
+    );
+    if (!rendered) fail("PDF.js must render an original PDF page inside the file preview");
+    // An older backend can still return extracted text.
     pdfDraws = false;
     await openFile("shot.png");
     await openFile("report.pdf");

@@ -6,7 +6,7 @@ import {sharedConfig} from '../../vite.config';
 const previewFiles = fileURLToPath(new URL('./data/workspace/', import.meta.url));
 const previewPrefix = '/assets/preview-fixtures/';
 const previewFolders = ['media', 'office'];
-const previewTypes:Record<string,string>={html:'text/html',css:'text/css',js:'text/javascript',json:'application/json',mp4:'video/mp4',wav:'audio/wav'};
+const previewTypes:Record<string,string>={html:'text/html',css:'text/css',js:'text/javascript',json:'application/json',mp4:'video/mp4',wav:'audio/wav',pdf:'application/pdf',png:'image/png'};
 const port = Number(process.env.KHOR_LAB_VITE_PORT || 23911);
 
 // Lab serves over HTTP and can load later chunks on demand. Tauri's

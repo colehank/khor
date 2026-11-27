@@ -88,6 +88,7 @@ import { FilesPane } from "@/views/FilesPane";
 import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, defaultFaceOf, FileView, rendererOf, type Draft } from "@/views/FileView";
+import { officeFormat } from "@/components/OfficePreview";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { RevisionView, revisionRenders, shortId } from "@/views/FileHistory";
 import { closeWorkspaceTab, openWorkspaceTab, pinWorkspaceTab, renameWorkspaceFiles, selectWorkspaceTab, selectedWorkspaceTarget, workspaceTabId, type WorkspaceTarget } from "@/views/workspace/workspace-tabs";
@@ -325,6 +326,8 @@ export function WorkspacePane({
   /** The middle column, where the reader's place is read and put back. */
   const mid = useRef<HTMLDivElement>(null);
   const handoff = useFileHandoff(machine, file ?? "", file !== null, mid);
+  const [readingToolsSeat, setReadingToolsSeat] = useState<HTMLDivElement | null>(null);
+  const previewReadingTools = !narrow && file !== null && rev === null && officeFormat(file) !== null;
   /** Where to put the reader once the face has changed (a source line). */
   const restore = useRef<number | null>(null);
   /** A ✓ waiting on its save before the face goes back to reading. */
@@ -1282,7 +1285,9 @@ export function WorkspacePane({
           history={git !== null}
           previewing={face === "preview"}
           faceToggle={rendererOf(file) !== null ? {face, run: face === "preview" ? editHere : readHere} : undefined}
-          toolbar={{ leading: shortcuts, actions: workspaceActions }}
+          toolbar={{ leading: shortcuts, actions: workspaceActions,
+            readingTools: previewReadingTools ?
+              <div ref={setReadingToolsSeat} className="flex items-center" data-workspace-reading-tools/> : undefined }}
           onRevision={(c) => {
             setRev(c);
             setRevCompare(false);
@@ -1547,7 +1552,7 @@ export function WorkspacePane({
           // a `min-width` it would be a wedge instead of a stop: the
           // three columns would simply overflow the window, and the
           // face would scroll sideways rather than the seam refusing.
-          className="relative flex min-w-0 flex-1 flex-col"
+          className={cn("relative flex min-w-0 flex-1 flex-col", previewReadingTools && "@container/reading")}
         >
           {version !== null ? <WorkspaceContentFrame
             narrow={narrow} onBack={() => setScreen("tree")}
@@ -1610,6 +1615,8 @@ export function WorkspacePane({
           ) : (
             <FileView
               handoff={handoff}
+              readingToolsSeat={previewReadingTools ? readingToolsSeat : null}
+              zoomIntroScope={selected ?? undefined}
               key={`${machine} ${file}`}
               machine={machine}
               path={file}
