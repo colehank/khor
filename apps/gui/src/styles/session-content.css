@@ -179,6 +179,9 @@
 .session-content-location-bar .content-location-pill>[data-page-field-row]{height:100%}
 .session-content-location-bar .content-location-pill [data-page-field]{background:transparent;box-shadow:none}
 
+[data-content-toolbar="file"]:has([data-content-reader-find]) > :is([data-content-scope],[data-content-back],[data-file-actions]),
+[data-content-location-layer]:has(> [data-content-reader-find]) > :not([data-content-reader-find]){display:none}
+
 /* A source is selected in the same app glass navigation at every desktop destination. */
 [data-content-toolbar]{order:-1}
 [data-content-toolbar] [data-content-scope-nav]{--ctl-glyph:var(--nav-glyph)}

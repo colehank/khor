@@ -88,6 +88,7 @@ import { FilesPane } from "@/views/FilesPane";
 import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, defaultFaceOf, FileView, rendererOf, type Draft } from "@/views/FileView";
+import { officeReadingLabEnabled } from "@/components/OfficePreview";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { RevisionView, revisionRenders, shortId } from "@/views/FileHistory";
 import { closeWorkspaceTab, openWorkspaceTab, pinWorkspaceTab, renameWorkspaceFiles, selectWorkspaceTab, selectedWorkspaceTarget, workspaceTabId, type WorkspaceTarget } from "@/views/workspace/workspace-tabs";
@@ -327,9 +328,7 @@ export function WorkspacePane({
   const handoff = useFileHandoff(machine, file ?? "", file !== null, mid);
   const [readingToolsSeat, setReadingToolsSeat] = useState<HTMLDivElement | null>(null);
   // Lab comparison of the workspace's existing action group and the Office row.
-  const previewReadingTools = !narrow && "__KHOR_LAB__" in window &&
-    new URLSearchParams(window.location.search).get("reading-tools") === "top" &&
-    file !== null && /\.(docx|pptx|xlsx)$/i.test(file);
+  const previewReadingTools = !narrow && file !== null && officeReadingLabEnabled(file);
   /** Where to put the reader once the face has changed (a source line). */
   const restore = useRef<number | null>(null);
   /** A ✓ waiting on its save before the face goes back to reading. */
@@ -1554,7 +1553,7 @@ export function WorkspacePane({
           // a `min-width` it would be a wedge instead of a stop: the
           // three columns would simply overflow the window, and the
           // face would scroll sideways rather than the seam refusing.
-          className="relative flex min-w-0 flex-1 flex-col"
+          className={cn("relative flex min-w-0 flex-1 flex-col", previewReadingTools && "@container/reading")}
         >
           {version !== null ? <WorkspaceContentFrame
             narrow={narrow} onBack={() => setScreen("tree")}

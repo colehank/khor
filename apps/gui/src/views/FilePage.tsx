@@ -38,6 +38,7 @@ import { caretCoveredAt, editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
+import { officeReadingLabEnabled } from "@/components/OfficePreview";
 import {ContentPill} from '@/components/ContentDeck';
 import { DeckBand, TabSheet } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
@@ -439,6 +440,8 @@ export function FilePage({
   const setFace = faceControl?.set ?? setLocalFace;
   const controlledFace = faceControl !== undefined;
   const handoff = useFileHandoff(machine,path,!localFile);
+  const [readingToolsSeat, setReadingToolsSeat] = useState<HTMLDivElement | null>(null);
+  const previewReadingTools = !!embeddedToolbar && rev === null && officeReadingLabEnabled(path);
   const verbs = useFileVerbs({
     more,
     machine,
@@ -457,6 +460,8 @@ export function FilePage({
     // 字号 and 预览背景 only while the file is read rendered (UX-14).
     previewing: previewable ? face === "preview" : false,
     faceToggle: rev === null && previewable ? { face, run: () => turn() } : undefined,
+    readingTools: previewReadingTools ? <div ref={setReadingToolsSeat}
+      className="flex items-center" data-content-reading-tools/> : undefined,
     handoff,
   });
   /** A re-read asked for from the pill's ↻ (UX-33), added to the one asked
@@ -577,7 +582,7 @@ export function FilePage({
       // on, or it would be the app's ink on a ground that is not the
       // app's.
       {...(face === "preview" && (rev === null || (!compare && revisionRenders(path)))) ? groundAttr(verbs.ground) : {}}
-      className="relative flex min-h-0 flex-1 flex-col bg-card"
+      className={cn("relative flex min-h-0 flex-1 flex-col bg-card", previewReadingTools && "@container/reading")}
       style={fileSizeStyle(verbs.size.step)}
     >
       {embedded && embeddedToolbar?.(<>
@@ -615,6 +620,7 @@ export function FilePage({
         ) : (
         <FileView
           handoff={handoff}
+          readingToolsSeat={previewReadingTools ? readingToolsSeat : null}
           localFile={localFile}
           editorHistory={editorHistory ?? localHistory.current}
           key={`${machine} ${path}`}
