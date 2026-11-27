@@ -452,6 +452,42 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await ready('docx');
     assert.deepEqual(foreign,[], 'Preview, including fonts, stays on the Lab origin');
 
+    const sessionEnvironment = mobile ? {...environment,platform:'ios',safeTop:59,safeBottom:34} : environment;
+    await page.goto(origin+'/app/?scene=content&machines=1'+
+      '&environment='+encodeURIComponent(JSON.stringify(sessionEnvironment)));
+    const backToFiles = mobile ? '[data-file-deck] [data-file-back]:visible' :
+      '[data-content-toolbar="file"] [data-content-back]:visible';
+    await page.locator(backToFiles).click();
+    const picker = page.locator('[data-content-picker]:visible');
+    await picker.locator('[data-file-path="/preview/project/office"]').click();
+    await picker.locator(`[data-file-path="/preview/project/office/${files.docx}"]`).click();
+    const sessionOffice = page.locator('[data-file-page] [data-office-toolbar]:visible');
+    await sessionOffice.waitFor({timeout:20_000});
+    const gap = () => sessionOffice.evaluate(toolbar => {
+      const file = toolbar.closest('[data-file-page]');
+      const location = file.querySelector('[data-content-toolbar="file"]');
+      const edge = location ? location.getBoundingClientRect().bottom : file.getBoundingClientRect().top;
+      return toolbar.getBoundingClientRect().top - edge;
+    });
+    if (!mobile) {
+      // The desktop browser does not inherit AppKit's window buttons.
+      await page.locator('html').evaluate(root => root.setAttribute('data-traffic',''));
+    }
+    const initialGap = await gap();
+    assert(Math.abs(initialGap)<=1,`The Office toolbar follows the content edge (${initialGap}px gap)`);
+    await page.screenshot({path:path.join(report,name+'-session.png')});
+    if (mobile) {
+      const sheet = page.locator('[data-mobile-content-sheet] [data-content-panel]');
+      await sheet.locator('[data-place-grab]').click();
+      await page.waitForFunction(() => {
+        const panel = document.querySelector('[data-content-panel][data-detent="full"]');
+        return panel && Math.abs(panel.getBoundingClientRect().top - panel.closest('[data-session-screen]').getBoundingClientRect().top) <= 1;
+      });
+      assert(Math.abs(await gap())<=1,'The full sheet reserves the status bar once');
+      assert((await sessionOffice.boundingBox()).y>=sessionEnvironment.safeTop,'Office controls clear the status bar');
+      await page.screenshot({path:path.join(report,name+'-session-full.png')});
+    }
+
     await page.route(/_parser_bg[^/]*\.wasm(?:\?|$)/, route =>
       route.request().resourceType() === 'fetch' ? route.abort() : route.continue());
     await open('docx');

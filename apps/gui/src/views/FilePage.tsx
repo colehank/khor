@@ -566,7 +566,7 @@ export function FilePage({
   return (
     <div
       ref={handoff.owner}
-      data-file-page
+      data-file-page={embedded || contentDeck ? "contained" : "standalone"}
       data-file-face={face}
       data-folded={!embedded && folded || undefined}
       // **预览背景 covers the page, not only the text** (round UX-4): the

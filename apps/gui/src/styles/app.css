@@ -562,7 +562,7 @@ aside[data-side] {
    window's corner the first row is the platform's (as `[data-session-top]`
    above), so the text starts below it. ⚠️ 墓碑 (UX-14): the name pill sat
    on that row's centre; the name is the deck's now. */
-:root[data-traffic] [data-file-page] :is([data-file-scroll], [data-file-preview], [data-diff-tab]) {
+:root[data-traffic] [data-file-page="standalone"] :is([data-file-scroll], [data-file-preview], [data-diff-tab]) {
   padding-top: calc(var(--pane-head) + var(--gap-in));
   scroll-padding-top: calc(var(--pane-head) + var(--gap-in));
 }
@@ -2543,8 +2543,9 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
 [data-file-page] :is([data-file-scroll], [data-file-preview]) {
   padding-bottom: calc(var(--dock-safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
 }
-/* A top toolbar owns its port's clearance; floating decks only reserve the safe area. */
-[data-file-page] :is([data-file-scroll], [data-file-preview]):not([data-band-scroll]) {
+/* A session location toolbar or mobile sheet already clears the top edge.
+   A standalone file reserves its own safe area unless a band owns the port. */
+[data-file-page="standalone"] :is([data-file-scroll], [data-file-preview]):not([data-band-scroll]) {
   padding-top: calc(var(--safe-top) + var(--gap-in));
   scroll-padding-top: calc(var(--safe-top) + var(--gap-in));
 }
@@ -2558,8 +2559,10 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
    view, whose two halves scroll on their own: the view as a whole clears
    the status bar and the deck instead. */
 [data-file-page] [data-diff-tab] {
-  padding-top: calc(var(--safe-top) + var(--gap-in));
   padding-bottom: calc(var(--dock-safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
+}
+[data-file-page="standalone"] [data-diff-tab] {
+  padding-top: calc(var(--safe-top) + var(--gap-in));
 }
 
 /* **The browser's deck steps aside for the page's own keyboard** (round
