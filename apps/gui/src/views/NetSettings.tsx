@@ -12,6 +12,7 @@ import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/c
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
+import { feel } from "@/lib/haptics";
 import { MoreSection } from "@/views/more/MorePage";
 import { RegionState, Waiting } from "@/components/RegionState";
 
@@ -77,7 +78,7 @@ function RelayPaths({ choices, devices, settings, manual, busy, sources, addRela
     const selected = key === preferred;
     return <RelayPathRow key={url} label={url} kind="configured"
       source={mine ? gui.net_summary_custom_services : undefined}
-      active={(!inPool || manual) && used.has(url)} compactMark={!inPool}
+      active={(!inPool || manual) && used.has(url)} inCurrentList={!inPool}
       plainHttp={url.startsWith("http://")} keyed={choices.keyed.includes(url)}
       preferred={inPool && selected} busy={busy}
       pick={inPool && manual && candidate ? () => onPick(selected ? null : candidate) : undefined}
@@ -87,11 +88,11 @@ function RelayPaths({ choices, devices, settings, manual, busy, sources, addRela
     ...(manual ? [] : entries.filter(([, url]) => used.has(url)).map((entry) => configuredRow(entry, false))),
     ...[...otherRelays].map(([host, source]) => (
       <RelayPathRow key={host ?? "unnamed-relay"} label={host ?? gui.net_relay_unknown_server}
-        kind="relay" source={source} active compactMark />
+        kind="relay" source={source} active inCurrentList />
     )),
     ...[...forwarding].map((via) => (
       <RelayPathRow key={`via:${via ?? ""}`} label={via ?? gui.net_relay_unknown_device}
-        kind="forwarding" source={gui.net_summary_peer} active compactMark />
+        kind="forwarding" source={gui.net_summary_peer} active inCurrentList />
     )),
   ];
 
@@ -140,12 +141,12 @@ function RelayPaths({ choices, devices, settings, manual, busy, sources, addRela
   return manual ? <>{pool}{currentSection}</> : <>{currentSection}{pool}</>;
 }
 
-function RelayPathRow({ label, kind, source, active, compactMark, plainHttp, keyed, preferred, busy, pick, remove }: {
+function RelayPathRow({ label, kind, source, active, inCurrentList, plainHttp, keyed, preferred, busy, pick, remove }: {
   label: string;
   kind: "configured" | "relay" | "forwarding";
   source?: string;
   active: boolean;
-  compactMark?: boolean;
+  inCurrentList?: boolean;
   plainHttp?: boolean;
   keyed?: boolean;
   preferred?: boolean;
@@ -155,14 +156,17 @@ function RelayPathRow({ label, kind, source, active, compactMark, plainHttp, key
 }) {
   const Row = pick ? "button" : "div";
   const note = [source, plainHttp && gui.relays_scheme_http, keyed && gui.relays_keyed].filter(Boolean).join(" · ");
-  const showLiveStatus = active && !compactMark;
+  const showLiveStatus = active && !inCurrentList;
   return (
     <div data-more-row data-relay-path={kind} data-relay-active={active}
       data-relay-mine={remove ? label : undefined} className="flex min-w-0 items-center gap-row">
-      <Row className={`flex min-w-0 flex-1 items-center gap-row text-left ${pick ? "group/relay min-h-touch rounded-sm focus-visible:outline-2 focus-visible:outline-ring" : ""}`}
+      <Row className={`flex min-w-0 flex-1 items-center gap-row text-left ${pick ? "group/relay -my-in min-h-touch rounded-sm py-in focus-visible:outline-2 focus-visible:outline-ring" : ""}`}
         {...(pick ? {
           type: "button" as const,
-          onClick: pick,
+          onClick: () => {
+            feel("selection");
+            pick();
+          },
           disabled: busy,
           title: preferred ? gui.net_relay_clear_preferred : gui.net_relay_set_preferred,
           "aria-pressed": !!preferred,
@@ -175,12 +179,12 @@ function RelayPathRow({ label, kind, source, active, compactMark, plainHttp, key
             {showLiveStatus && <>{note && " · "}<span data-relay-path-status>{gui.relays_in_use}</span></>}
           </span>}
         </span>
-        {pick ? (
-          <span aria-hidden="true" data-relay-selection-icon={preferred ? "selected" : "unselected"}
+        {pick && (
+          <span aria-hidden="true" data-setting-trail={remove ? undefined : ""} data-relay-selection-icon={preferred ? "selected" : "unselected"}
             className={`grid size-affordance flex-none place-items-center rounded-full border ${preferred ? "border-foreground text-foreground" : "border-muted-foreground group-hover/relay:border-foreground"}`}>
             {preferred && <IconCheck className="size-full" />}
           </span>
-        ) : active && compactMark && <IconCheck className="size-affordance flex-none text-foreground" />}
+        )}
       </Row>
       {remove && <Button onClick={remove} disabled={busy} data-setting-trail className="min-h-touch min-w-touch flex-none">{gui.remove}</Button>}
     </div>
