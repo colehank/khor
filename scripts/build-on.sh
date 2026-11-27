@@ -118,7 +118,14 @@ eval "rsync -a --delete \
 # The whole workspace's dependencies compile the first time (minutes on
 # many cores); every run after that is incremental against $TGT.
 say "build-on: cargo build --profile local -p khor-cli on $HOST (target $TGT)"
-ssh_ "cd '$SRC' && if PATH=\"\$HOME/.cargo/bin:\$PATH\" CARGO_INCREMENTAL=0 CARGO_TARGET_DIR='$TGT' KHOR_AGENT_BUNDLE='$SRC/apps/agent/dist/khor-agent' cargo build --profile local -p khor-cli --bin khor >'$TGT/build.log' 2>&1; then tail -8 '$TGT/build.log'; else tail -60 '$TGT/build.log'; exit 1; fi"
+ssh_ "cd '$SRC' || exit 1
+  export PATH=\"\$HOME/.cargo/bin:\$PATH\" CARGO_INCREMENTAL=0 CARGO_TARGET_DIR='$TGT'
+  export KHOR_AGENT_BUNDLE='$SRC/apps/agent/dist/khor-agent'
+  if { cargo build --profile local -p khor-node --bin khor-server &&
+       KHOR_SERVER_BINARY='$TGT/local/khor-server' cargo build --profile local -p khor-cli --bin khor; } >'$TGT/build.log' 2>&1
+  then tail -8 '$TGT/build.log'
+  else tail -60 '$TGT/build.log'; exit 1
+  fi"
 PRODUCT="$TGT/local/khor"
 HASH=$(ssh_ "sha256sum '$PRODUCT' 2>/dev/null | cut -c1-24" | tr -d '\r')
 [ -n "$HASH" ] || { echo "build-on: no product at $HOST:$PRODUCT" >&2; exit 1; }

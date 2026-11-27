@@ -764,7 +764,7 @@ fn spawn_ghost_prepared(
     if prepared_claim.is_some() && resume.is_none() {
         return Err("a recovery claim cannot start a New session".into());
     }
-    let image = crate::runtime_image::host()?;
+    let image = crate::runtime_image::session_host(crate::runtime_image::host)?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
         std::process::id(),
@@ -1084,7 +1084,7 @@ fn gui_environment(
                 .ok()
                 .is_none_or(|v| v["name"] != "khor")
         });
-        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
+        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::installed_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
     }
     Ok(environment)
 }

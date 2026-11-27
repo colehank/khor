@@ -1,5 +1,9 @@
 //! Native terminal entry point for the shared command engine.
 fn main() {
+    #[cfg(khor_embedded_server)]
+    khor_node::runtime_image::register_embedded_session_server(include_bytes!(env!(
+        "KHOR_SERVER_BINARY"
+    )));
     #[cfg(feature = "net-diagnostics")]
     if let Some(mode) = std::env::var_os("KHOR_NET_DIAGNOSTICS") {
         let lifecycle_only = mode == "lifecycle";

@@ -80,6 +80,20 @@ def executable_info(program, command=()):
     return info
 
 
+def verify_session_server(program, owner, command=()):
+    output = subprocess.check_output([*command, str(program), "_runtime_info"], timeout=45)
+    if len(output) > 16 * 1024:
+        raise ValueError("Session server runtime report exceeds its limit")
+    release = json.loads(output)["release"]
+    platform = owner["platform"]
+    if (release["schema"] != 1 or release["role"] != "session-host"
+            or not 0 < len(release["version"]) <= 64
+            or release["platform"] != f'{platform["os"]}-{platform["arch"]}'
+            or release["contract"] != owner["contract"]):
+        raise ValueError("Session server differs from the build's runtime contract")
+    return release
+
+
 def create(root, kind, frontend=None, executable=None, agent=None, program_info=None, *, msi_unpacked_bytes=None):
     sha = source_sha()
     if kind == "frontend":

@@ -512,6 +512,18 @@ pub fn main_if_host(root: std::path::PathBuf) {
     std::process::exit(0);
 }
 
+/// Standalone entry point for the detached terminal and ACP session workers.
+pub fn run_session_server() -> Result<(), String> {
+    crate::runtime_image::enter_session_server()?;
+    let root = crate::Node::root_from_env();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("_host") => host_args(&root, &args[1..]),
+        Some("_ghost") => ghost_args(&root, &args[1..]),
+        _ => Err("khor-server is launched by Khor to host sessions".into()),
+    }
+}
+
 fn host_args(root: &Path, rest: &[String]) -> Result<(), String> {
     let (head, cmd) = match rest.iter().position(|a| a == "--") {
         Some(i) => (&rest[..i], &rest[i + 1..]),
@@ -693,10 +705,9 @@ fn spawn_host_with(
 ) -> Result<(), String> {
     let mut host_spawned = false;
     let result = (|| -> Result<(), String> {
-        // Public viewer compatibility permits older installed runtimes. This
-        // child implements our private startup/control ABI and must use the
-        // same code as its opener, including when the opener is the GUI.
-        let image = crate::runtime_image::running_host()?;
+        // The child must implement the opener's private startup/control
+        // protocol. Source-only harnesses can still provide their own worker.
+        let image = crate::runtime_image::session_host(crate::runtime_image::running_host)?;
         crate::startup_trace::mark("client-image");
         let mut c = std::process::Command::new(image.path());
         // A host belongs to the store containing this session. A GUI request may

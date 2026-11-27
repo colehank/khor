@@ -12,7 +12,7 @@ import tempfile
 import time
 import uuid
 
-from release_manifest import executable_info, source_sha
+from release_manifest import executable_info, source_sha, verify_session_server
 
 WINDOWS_SESSION_TITLE = "Khor installer terminal"
 WINDOWS_READY_MARKER = "KHOR_TERMINAL_READY"
@@ -24,7 +24,7 @@ def run(*args):
     return subprocess.run(list(map(str, args)), check=True, capture_output=True, text=True, timeout=600)
 
 
-def same_programs(directory, expected_source):
+def same_programs(directory, expected_source, require_server=True):
     suffix = ".exe" if os.name == "nt" else ""
     cli, gui = directory / ("khor" + suffix), directory / ("khor-gui" + suffix)
     command, application = executable_info(cli), executable_info(gui)
@@ -32,6 +32,8 @@ def same_programs(directory, expected_source):
     assert application["component"] == "desktop-app"
     assert all(command[key] == application[key] for key in ("build", "platform", "contract"))
     assert command["build"]["source"] == expected_source
+    if require_server:
+        verify_session_server(directory / ("khor-server" + suffix), application)
     upgraded = subprocess.run([str(cli), "upgrade", "--check"], capture_output=True, timeout=30)
     assert upgraded.returncode != 0, "The bundled CLI must follow its package owner"
     guidance = upgraded.stderr.decode(errors="replace").lower()
@@ -276,6 +278,7 @@ def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shel
         # executable with the long spelling. Match the same owned directory.
         scratch = Path(temporary).resolve()
         runtime = scratch / "runtime"
+        session_runtime = scratch / "runtime-sessions"
         environment = {**os.environ, "KHOR_HOME": str(scratch / "node"),
                        "KHOR_RUNTIME_DIR": str(runtime), "LANG": "en_US.UTF-8"}
         suffix = ".exe" if os.name == "nt" else ""
@@ -310,7 +313,8 @@ def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shel
                             rows.append((int(entry.name), (entry / "exe").resolve(strict=True)))
                         except (OSError, RuntimeError):
                             pass
-            return [(pid, path) for pid, path in rows if path == application or path.is_relative_to(runtime)]
+            return [(pid, path) for pid, path in rows
+                    if path == application or path.is_relative_to(runtime) or path.is_relative_to(session_runtime)]
 
         service = None
         exit_service = None
@@ -542,7 +546,7 @@ def windows(package, expected_source, acp_fixture=None, previous=None, native_dr
                 result = invoke_msi("/i", baseline, destination)
                 assert result.returncode in (0, 3010), result.returncode
                 installed = baseline
-                same_programs(destination, previous_source)
+                same_programs(destination, previous_source, require_server=False)
                 print("Installed and verified the previous Windows App and CLI.", flush=True)
             # An in-app upgrade uses the installer's registered location.
             result = invoke_msi("/i", package, None if previous is not None else destination)

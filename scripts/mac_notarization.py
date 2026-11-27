@@ -11,7 +11,7 @@ import uuid
 
 from apple_release import api_key, required, run
 from mac_installer import build as build_installer, extract as extract_installer
-from release_manifest import create, digest, executable_info, files, source_sha, verify, version
+from release_manifest import create, digest, executable_info, files, source_sha, verify, version, verify_session_server
 from release_store import gh, repository
 
 TARGETS = {"aarch64-apple-darwin": "khor-macos-arm64", "x86_64-apple-darwin": "khor-macos-x86_64"}
@@ -34,6 +34,7 @@ def package_build(target, signed, root, frontend, agent):
     if (info.get("component") != "desktop-app" or cli.get("component") != "cli"
             or any(cli.get(key) != info.get(key) for key in ("build", "platform", "contract"))):
         raise ValueError("The App and its CLI must have the same build, platform and runtime contract")
+    verify_session_server(app / "Contents/MacOS/khor-server", info)
     archive = root / "upload.pkg"
     # Installer receipts use the numeric bundle version; the App and CLI
     # keep their complete release identities, including the RC.
