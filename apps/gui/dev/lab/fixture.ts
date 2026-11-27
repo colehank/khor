@@ -68,9 +68,14 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean;longHistory?:boolean;khorSession?:string;dsh?:boolean} = {}) {
+export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean;longHistory?:boolean;khorSession?:string;dsh?:boolean;relayPaths?:boolean} = {}) {
   const ids = defaultIds.map((id,index)=>index===4 ? options.khorSession??id : index===3&&options.dsh?'gui/dsh-review':id);
   const devices = labDevices(device,options.machines ?? 3);
+  if (options.relayPaths) {
+    if (devices[2]) devices[2].relay = "shared-relay.example.org";
+    if (devices[4]) Object.assign(devices[4], {hop:"relay", relay:"peer-advertised.example.org", rtt_ms:82});
+    if (devices[5]) Object.assign(devices[5], {hop:"forwarded", via:devices[1].shown, paused:false, rtt_ms:33});
+  }
   const importFrames=new Map<string,Frame[]>();
   const importReaders=new Map<string,ReturnType<typeof canonicalChatFixture>>();
   const imports = sessionImportFixture(devices.map(device=>device.id));

@@ -12788,7 +12788,7 @@ ${serverLog}`);
         continue;
       }
       await press(relayEntry);
-      await until(3_000, async () => (await page.locator("[data-relays-in-use]").count()) > 0);
+      await until(3_000, async () => (await page.locator('[data-more-section="relay-paths"] [data-relay-path="configured"]').count()) > 0);
       const net = await page.evaluate(() => {
         const el = document.querySelector('[data-more-page="connection"]');
         if (!el) return null;
@@ -12807,7 +12807,7 @@ ${serverLog}`);
           pause: el.querySelectorAll('[data-net-pause][role="switch"]').length,
           leave: el.querySelectorAll("[data-net-leave]").length,
           fold: el.querySelectorAll("[data-more-fold]").length,
-          inUse: el.querySelector("[data-relays-in-use]")?.textContent?.trim() ?? null,
+          paths: el.querySelectorAll('[data-more-section="relay-paths"] [data-relay-path="configured"] [data-relay-path-status]').length,
           mine: el.querySelectorAll("[data-relay-mine]").length,
           add: el.querySelectorAll("[data-relay-add]").length,
           sources: el.querySelectorAll('[data-more-section="network-public-infrastructure"] [data-setting-row-name="khor_relays"], [data-more-section="network-public-infrastructure"] [data-setting-row-name="n0_relays"]').length,
@@ -12837,7 +12837,7 @@ ${serverLog}`);
         if (!net.me || !net.me.includes("gate") || !net.connected) {
           fail(`${posture}: 状态 reads 本机 ${JSON.stringify(net.me)} / 已连接的机器 ${JSON.stringify(net.connected)} — both are facts khor holds`);
         }
-        if (net.fold !== 0 || !net.inUse || net.mine === 0 || net.add !== 1 || net.sources !== 2 || !net.status) {
+        if (net.fold !== 0 || net.paths === 0 || net.mine === 0 || net.add !== 1 || net.sources !== 2 || !net.status) {
           fail(`${posture}: 中继 should show configuration status, both public sources, configured URLs and the add action: ${JSON.stringify(net)}`);
         }
         if (relaysAsked.length === relaysBefore) {

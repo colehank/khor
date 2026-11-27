@@ -5,11 +5,12 @@ import { fetchNetworkSettings, fetchRelays, setPreferredRelay, setRelays, type D
 import { NetworkPolicySettings, type NetworkDetail } from "./NetworkPolicySettings";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
+import { IconCheck } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
-import { MoreFact } from "@/views/more/MorePage";
+import { MoreSection } from "@/views/more/MorePage";
 import { RegionState, Waiting } from "@/components/RegionState";
 
 /** A relay to keep as it is stored — its key, if any, stays put. */
@@ -20,6 +21,107 @@ const kept = (url: string): RelayWant => ({ url, token: null });
     box over two schemes, and the address alone left the difference to
     a reader who knows what the letters mean. */
 const scheme = (url: string) => (url.startsWith("https://") ? gui.relays_scheme_https : gui.relays_scheme_http);
+
+function relayAddress(url: string) {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
+function RelayPaths({ choices, devices, settings, onRemove }: {
+  choices: RelayChoices;
+  devices: DeviceRow[];
+  settings: NetworkSettings;
+  onRemove: (url: string) => void;
+}) {
+  // A relay's live reading is host and non-default port. Only a unique
+  // match can identify a configured URL, which also carries its scheme.
+  const configured = new Map<string, string>();
+  for (const url of [...choices.in_use, ...choices.mine]) {
+    configured.set(relayAddress(url)?.href ?? url, url);
+  }
+  const configuredByHost = new Map<string, string[]>();
+  for (const url of configured.values()) {
+    const host = relayAddress(url)?.host;
+    if (!host) continue;
+    const entries = configuredByHost.get(host) ?? [];
+    entries.push(url);
+    configuredByHost.set(host, entries);
+  }
+
+  const used = new Set<string>();
+  const ambiguous = new Set<string>();
+  const otherRelays = new Map<string | null, string>();
+  const forwarding = new Set<string | null>();
+  for (const device of devices) {
+    if (device.me) continue;
+    if (device.hop === "forwarded") forwarding.add(device.via);
+    if (device.hop !== "relay") continue;
+    const matches = device.relay ? configuredByHost.get(device.relay.toLowerCase()) ?? [] : [];
+    if (matches.length === 1) {
+      used.add(matches[0]);
+      continue;
+    }
+    for (const url of matches) ambiguous.add(url);
+    const advertised = device.relay && matches.length === 0
+      && !settings.pending_restart && !settings.invalid && settings.profile.policy.advertised_relays;
+    otherRelays.set(device.relay, advertised ? gui.net_summary_advertised : gui.net_relay_unidentified);
+  }
+
+  const unresolved = otherRelays.has(null) || !devices.some((device) => device.me);
+  return <>
+    {[...configured.values()].map((url) => {
+      const mine = choices.mine.includes(url);
+      const active = used.has(url);
+      const status = active ? gui.relays_in_use : !settings.resident ? gui.net_relay_node_stopped
+        : unresolved || ambiguous.has(url) ? gui.net_relay_unconfirmed : gui.net_relay_idle;
+      return <RelayPathRow key={url} label={url} kind="configured"
+        source={mine ? gui.net_summary_custom_services : gui.net_relays_configured}
+        status={status} active={active} keyed={choices.keyed.includes(url)}
+        remove={mine ? () => onRemove(url) : undefined} />;
+    })}
+    {[...otherRelays].map(([host, source]) => (
+      <RelayPathRow key={host ?? "unnamed-relay"} label={host ?? gui.net_relay_unknown_server}
+        kind="relay" source={source} status={gui.relays_in_use} active />
+    ))}
+    {[...forwarding].map((via) => (
+      <RelayPathRow key={`via:${via ?? ""}`} label={via ?? gui.net_relay_unknown_device}
+        kind="forwarding" source={gui.net_summary_peer} status={gui.relays_in_use} active />
+    ))}
+    {configured.size === 0 && otherRelays.size === 0 && forwarding.size === 0 && (
+      <p className="text-callout text-muted-foreground">{gui.net_detail_no_relay_routes}</p>
+    )}
+  </>;
+}
+
+function RelayPathRow({ label, kind, source, status, active, keyed, remove }: {
+  label: string;
+  kind: "configured" | "relay" | "forwarding";
+  source: string;
+  status: string;
+  active: boolean;
+  keyed?: boolean;
+  remove?: () => void;
+}) {
+  return (
+    <div data-more-row data-relay-path={kind} data-relay-active={active}
+      data-relay-mine={remove ? label : undefined} className="flex min-w-0 items-center gap-row">
+      <div className="min-w-0 flex-1">
+        <div data-selectable className="text-body [overflow-wrap:anywhere]">{label}</div>
+        <div className="text-callout text-muted-foreground">
+          {source}{keyed && <span data-relay-keyed> · {gui.relays_keyed}</span>}
+        </div>
+      </div>
+      <span data-relay-path-status className={`flex flex-none items-center gap-xxs text-callout ${active ? "text-foreground" : "text-muted-foreground"}`}>
+        {active && <IconCheck className="size-affordance" />}
+        {status}
+      </span>
+      {remove && <Button onClick={remove} data-setting-trail className="min-h-touch min-w-touch flex-none">{gui.remove}</Button>}
+    </div>
+  );
+}
 
 /** Mounting is reading: the page is drawn only while it is on screen. */
 export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
@@ -58,6 +160,7 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
   // because that is the shape the node takes (`Node::set_relays`
   // replaces). The node's own sentence names the entry it refused.
   const write = async (next: RelayWant[], onlyMine: boolean) => {
+    setError(null);
     try {
       setChoices(await setRelays(next, onlyMine));
       void fetchNetworkSettings().then(setNetwork, (e: unknown) => {
@@ -68,31 +171,32 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
     }
   };
 
+  const retry = () => {
+    setError(null);
+    setReadAttempt((attempt) => attempt + 1);
+  };
+
+  const relayPaths = detail === "relays" && network && (
+    <MoreSection name="relay-paths" label={gui.net_relay_path_list}>
+      {choices ? <>
+        <RelayPaths choices={choices} devices={devices} settings={network} onRemove={(url) => {
+          void write(choices.mine.filter((entry) => entry !== url).map(kept), choices.only_mine);
+        }} />
+        <ActionRow name="relay-add" label={gui.relays_mine} actionLabel={gui.relays_add}
+          onPress={() => setAdding(true)} mark={{ "data-relay-add": "" }} />
+      </> : error ? <RegionState state="error" message={error} onRetry={retry} /> : <Waiting since={since} />}
+    </MoreSection>
+  );
+
   const relayRows = (
     <>
-      {error && (
+      {choices && error && (
         <div data-relays-error className="text-callout text-destructive">
           {error}
         </div>
       )}
-      {/* Loading until the first answer (UX-4): the heading stood over
-          nothing, and the next group's 离开网络 read as a relay. */}
-      {!choices && !error && <Waiting since={since} />}
       {choices && (
         <>
-          {/* 使用中: a fact, one address a line — nothing here can be
-              removed, so nothing here offers to. */}
-          {choices.in_use.length > 0 && <MoreFact name="relays-in-use" label={gui.net_relays_configured}>
-            <span data-relays-in-use className="flex flex-col items-end font-mono">
-              {choices.in_use.map((url) => (
-                <span key={url} data-relay-scheme={url.startsWith("https://") ? "https" : "http"}>
-                  {url}
-                  <span className="ml-2 font-sans text-muted-foreground">{scheme(url)}</span>
-                </span>
-              ))}
-            </span>
-          </MoreFact>}
-
           {/* 首选中继 (round NET-2): which of the relays in use this
               machine homes on whenever it is reachable — 自动 is iroh's
               own choice, the nearest. The system's menu, like every
@@ -121,35 +225,6 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
             />
           )}
 
-          {/* 自己的中继: the row that adds one (its act asks for the
-              address, so it opens a window and wears the ellipsis —
-              ⚠️ 墓碑 2026-09-28: a text box and a button stood in the
-              card here, a form in a row's place), then one row per
-              entry whose one act is 移除, on the spot. */}
-          <ActionRow
-            name="relays-mine"
-            label={gui.relays_mine}
-            actionLabel={gui.relays_add}
-            onPress={() => setAdding(true)}
-            mark={{ "data-relay-add": "" }}
-          />
-          {choices.mine.map((url) => (
-            <ActionRow
-              key={url}
-              name="relay"
-              rowMark={{ "data-relay-mine": url }}
-              label={<span data-selectable className="block truncate font-mono">{url}</span>}
-              hint={choices.keyed.includes(url) ? <span data-relay-keyed>{gui.relays_keyed}</span> : undefined}
-              actionLabel={gui.remove}
-              onPress={() =>
-                void write(
-                  choices.mine.filter((u) => u !== url).map(kept),
-                  choices.only_mine,
-                )
-              }
-            />
-          ))}
-
           <RelayAddDialog
             open={adding}
             onClose={() => setAdding(false)}
@@ -166,17 +241,14 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
   );
 
   if (!network) {
-    return error ? <RegionState state="error" message={error} onRetry={() => {
-      setError(null);
-      setReadAttempt((attempt) => attempt + 1);
-    }} /> : <Waiting since={since} />;
+    return error ? <RegionState state="error" message={error} onRetry={retry} /> : <Waiting since={since} />;
   }
 
   return <NetworkPolicySettings
     settings={network}
     detail={detail}
     onOpenDetail={onOpenDetail}
-    devices={devices}
+    relayPaths={relayPaths}
     relayRows={relayRows}
     advancedRows={advancedRows}
     onChange={(settings) => {

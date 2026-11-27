@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 
 import {
   importNetworkProfile, refreshNetworkProfile, setNetworkPolicy,
-  type DeviceRow, type NetworkPolicy, type NetworkSettings,
+  type NetworkPolicy, type NetworkSettings,
 } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { NavRow } from "@/components/settings/NavRow";
@@ -57,12 +57,12 @@ export function networkDetailTitle(detail: NetworkDetail) {
 }
 
 export function NetworkPolicySettings({
-  settings, onChange, detail, onOpenDetail, devices, relayRows, advancedRows,
+  settings, onChange, detail, onOpenDetail, relayPaths, relayRows, advancedRows,
 }: {
   settings: NetworkSettings;
   detail: NetworkDetail | null;
   onOpenDetail: (detail: NetworkDetail) => void;
-  devices: DeviceRow[];
+  relayPaths: ReactNode;
   relayRows: ReactNode;
   advancedRows: ReactNode;
   onChange: (settings: NetworkSettings) => void;
@@ -134,12 +134,6 @@ export function NetworkPolicySettings({
     (policy.pkarr.length > 0 || policy.dns_origins.length > 0) && gui.net_summary_custom_services,
     policy.mdns && gui.net_summary_local,
   ].filter(Boolean).join(" · ") || gui.net_summary_no_sources;
-  const relayRoutes = detail === "relays" ? [...new Set(devices.flatMap((device) => {
-    if (device.me) return [];
-    if (device.hop === "relay") return [device.relay || gui.net_relays];
-    if (device.hop === "forwarded") return [device.via ? gui.add_step_via(device.via) : gui.net_summary_peer];
-    return [];
-  }))] : [];
   const showDetailStatus = detail === "relays" || detail === "addressing";
 
   return <>
@@ -152,9 +146,6 @@ export function NetworkPolicySettings({
       <MoreFact name="network-config-sources" label={gui.net_detail_config_sources}>
         {detail === "relays" ? relaySummary : addressingSummary}
       </MoreFact>
-      {detail === "relays" && <MoreFact name="network-relay-routes" label={gui.net_detail_relay_routes}>
-        {relayRoutes.join(" · ") || gui.net_detail_no_relay_routes}
-      </MoreFact>}
     </MoreSection>}
     {detail && !showDetailStatus && settings.pending_restart && <p role="status" className="px-row text-callout text-muted-foreground">{status}</p>}
     {!detail && <>
@@ -187,6 +178,7 @@ export function NetworkPolicySettings({
       </MoreSection>
     </>}
     {detail === "relays" && <>
+      {relayPaths}
       <MoreSection name="network-public-infrastructure" label={gui.net_summary_public_infrastructure}>
         {toggle("khor_relays", gui.net_relay_khor, gui.net_profile_auto_note)}
         {toggle("n0_relays", gui.net_relay_n0)}

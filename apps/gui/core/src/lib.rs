@@ -1774,11 +1774,7 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
     Ok(RelayChoices {
         mine: node.relay_choices(),
         keyed: node.relays_keyed(),
-        in_use: if node.has_explicit_network_policy() {
-            node.configured_relay_urls()
-        } else {
-            node.relays().to_vec()
-        },
+        in_use: node.configured_relay_urls(),
         only_mine: node.relays_only_mine(),
         preferred: node.preferred_relay(),
     })
