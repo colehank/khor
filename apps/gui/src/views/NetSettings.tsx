@@ -203,7 +203,7 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
             label={gui.net_relay_selection}
             value={manual ? "manual" : "auto"}
             options={[
-              { key: "auto", label: gui.net_relay_select_auto, disabled: writingRelay },
+              { key: "auto", label: gui.automatic, disabled: writingRelay },
               { key: "manual", label: gui.net_relay_select_manual, disabled: writingRelay || !canChoose },
             ]}
             onChange={(mode) => {

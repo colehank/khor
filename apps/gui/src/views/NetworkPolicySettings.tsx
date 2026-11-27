@@ -180,7 +180,7 @@ export function NetworkPolicySettings({
     {detail === "relays" && <>
       {relayPaths}
       <MoreSection name="network-public-infrastructure" label={gui.net_summary_public_infrastructure}>
-        {toggle("khor_relays", gui.net_relay_khor, gui.net_profile_auto_note)}
+        {toggle("khor_relays", gui.net_relay_khor)}
         {toggle("n0_relays", gui.net_relay_n0)}
       </MoreSection>
       <MoreSection name="relays" mark={{ "data-net-settings": "" }}>
