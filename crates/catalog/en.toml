@@ -1051,6 +1051,7 @@ watch-path-twice = "Same directory listed twice: {0}"
 
 # ── the machine's own relays ──
 not-a-relay-url = "Not a relay address: {0}"
+retired-relay-url = "This relay has been retired: {0}"
 no-local-lookup = "Local network discovery won't start"
 relays-only-mine-needs-one = "Add one of your own relays first — then you can use only your own"
 preferred-not-a-relay = "{0} is not one of this machine's relays — add it under Relays first"

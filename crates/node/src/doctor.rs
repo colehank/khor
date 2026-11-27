@@ -1136,6 +1136,12 @@ pub(crate) async fn any_relay_answers(urls: Vec<String>) -> bool {
     // A first success or a cancelled caller drops the remaining probes.
     let mut asks = tokio::task::JoinSet::new();
     for url in urls {
+        if url
+            .parse::<iroh::RelayUrl>()
+            .is_ok_and(|url| khor_net::endpoint::is_retired_relay(&url))
+        {
+            continue;
+        }
         asks.spawn(async move { relay_rtt(&url).await.is_some() });
     }
     while let Some(ask) = asks.join_next().await {

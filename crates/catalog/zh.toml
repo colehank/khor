@@ -1458,6 +1458,7 @@ watch-path-twice = "目录重复：{0}"
 # 连不上」weeks later, pointing at the network — and the user is looking
 # at a screen that still lists the relay they typed.
 not-a-relay-url = "不是一个中继地址：{0}"
+retired-relay-url = "这个中继已停用：{0}"
 # 局域网发现起不来。不致命——中继照常,只是找隔壁那台也要绕中继走;
 # 而它起不来时没有任何症状,所以这句是唯一会说话的东西。
 no-local-lookup = "局域网发现无法启动"

@@ -974,7 +974,10 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
             _ => continue,
         };
         let url = url.trim();
-        if url.is_empty() || url.parse::<iroh::RelayUrl>().is_err() {
+        let Ok(relay) = url.parse::<iroh::RelayUrl>() else {
+            continue;
+        };
+        if khor_net::endpoint::is_retired_relay(&relay) {
             continue;
         }
         if mine.iter().any(|have| have.url == url) {
@@ -996,7 +999,10 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
         .get("preferred")
         .and_then(serde_json::Value::as_str)
         .map(str::trim)
-        .filter(|u| u.parse::<iroh::RelayUrl>().is_ok())
+        .filter(|u| {
+            u.parse::<iroh::RelayUrl>()
+                .is_ok_and(|url| !khor_net::endpoint::is_retired_relay(&url))
+        })
         .map(str::to_owned);
     RelayPlan {
         mine,
@@ -1508,8 +1514,12 @@ impl Node {
             if url.is_empty() {
                 continue;
             }
-            url.parse::<iroh::RelayUrl>()
+            let relay = url
+                .parse::<iroh::RelayUrl>()
                 .map_err(|_| msg::not_a_relay_url(url))?;
+            if khor_net::endpoint::is_retired_relay(&relay) {
+                return Err(msg::retired_relay_url(url));
+            }
             if kept.iter().any(|have| have.url == url) {
                 continue;
             }
