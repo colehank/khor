@@ -1617,6 +1617,7 @@ export function WorkspacePane({
             <FileView
               handoff={handoff}
               readingToolsSeat={previewReadingTools ? readingToolsSeat : null}
+              zoomIntroScope={selected ?? undefined}
               key={`${machine} ${file}`}
               machine={machine}
               path={file}

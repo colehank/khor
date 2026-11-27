@@ -55,7 +55,7 @@ import type { EditorHistorySlot } from "@/lib/code/history";
 import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import {ResourcePreview} from "@/components/ResourcePreview";
 import { OFFICE_PREVIEW_LIMIT, OfficePreview, officeFormat, type OfficeFailure } from "@/components/OfficePreview";
-import { PreviewZoom, floatingZoomLabEnabled } from "@/components/PreviewZoom";
+import { PreviewZoom, PreviewZoomIntroScope, floatingZoomLabEnabled } from "@/components/PreviewZoom";
 import { RegionState } from "@/components/RegionState";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
@@ -286,11 +286,18 @@ export function defaultFaceOf(path: string): "source" | "preview" {
   return rendererOf(path) === "ipynb" ? "preview" : "source";
 }
 
-export function FileView(props: Omit<Parameters<typeof FileBody>[0],"handoff"> & {handoff?:FileHandoffControl}) {
+export function FileView({ zoomIntroScope, ...props }: Omit<Parameters<typeof FileBody>[0],"handoff"> & {
+  handoff?: FileHandoffControl;
+  /** Identity of the open tab when the host remounts the file on selection. */
+  zoomIntroScope?: object;
+}) {
   const own=useFileHandoff(props.machine,props.path,!props.handoff&&!props.localFile);
   const handoff=props.handoff??own;
+  const fileScope = useMemo(() => ({}), [props.machine, props.path]);
   return <div ref={own.owner} data-file-body className="relative flex min-h-0 flex-1 flex-col">
-    <FileBody key={JSON.stringify([props.machine,props.path])} {...props} handoff={handoff}/>
+    <PreviewZoomIntroScope.Provider value={zoomIntroScope ?? fileScope}>
+      <FileBody key={JSON.stringify([props.machine,props.path])} {...props} handoff={handoff}/>
+    </PreviewZoomIntroScope.Provider>
     {!props.handoff&&<FileHandoffStatus handoff={handoff}/>}
   </div>;
 }

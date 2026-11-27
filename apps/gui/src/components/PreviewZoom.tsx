@@ -1,10 +1,14 @@
-import { useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef } from "react";
 import { GlassCapsule, GlassItem } from "@/components/Glass";
 import { IconMinus, IconPlus } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { groundUnder, inkOver } from "@/lib/deck-fold";
 
 const previewInk = "group-data-[ink=dark]/preview-zoom:text-(--ink-on-light) group-data-[ink=light]/preview-zoom:text-(--ink-on-dark)";
+
+/** The open file can outlive the mounted renderer when another tab is selected. */
+export const PreviewZoomIntroScope = createContext<object | null>(null);
+const introduced = new WeakSet<object>();
 
 function previewGround(lens: DOMRect, panel: HTMLElement, pixel: CanvasRenderingContext2D | null): string {
   const x = lens.left + lens.width / 2, y = lens.top + lens.height / 2;
@@ -39,6 +43,8 @@ export function floatingZoomLabEnabled(): boolean {
 /** The preview owns the hover area so invisible controls leave the page interactive. */
 export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
   const area = useRef<HTMLDivElement>(null);
+  const ownScope = useRef({});
+  const introScope = useContext(PreviewZoomIntroScope) ?? ownScope.current;
   useEffect(() => {
     const panel = area.current;
     const preview = panel?.parentElement;
@@ -79,8 +85,6 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
 
     let inView = false;
     let presented = false;
-    // Session file tabs can stay mounted with display:none when inactive.
-    // Reveal on entry to the visible preview, including a retained tab's return.
     const syncPresentation = () => {
       const visible = inView && !document.hidden;
       if (visible === presented) return;
@@ -88,12 +92,15 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
       if (!visible) {
         stopIntro();
         hovered = touchShown = false;
-      } else if (!hovered) {
-        introTimer = window.setTimeout(() => {
-          introTimer = 0;
-          hovered = lens.matches(":hover");
-          updateVisibility();
-        }, 2000);
+      } else if (!introduced.has(introScope)) {
+        introduced.add(introScope);
+        if (!hovered) {
+          introTimer = window.setTimeout(() => {
+            introTimer = 0;
+            hovered = lens.matches(":hover");
+            updateVisibility();
+          }, 2000);
+        }
       }
       updateVisibility();
     };
@@ -152,7 +159,7 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
       if (introObserver) document.removeEventListener("visibilitychange", syncPresentation);
       stopIntro();
     };
-  }, []);
+  }, [introScope]);
 
   return <div ref={area} data-preview-zoom
     className="group/preview-zoom pointer-events-none absolute inset-x-0 bottom-row z-20 mx-auto flex w-fit min-w-40 justify-center px-page pt-row pb-row">
