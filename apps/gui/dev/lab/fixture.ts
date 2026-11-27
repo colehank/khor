@@ -7,7 +7,9 @@ import {navigationFixture,FixtureRefusal} from './navigation';
 import {officeFixturePreview,officeFixtures} from './office-fixtures';
 import type {AppUpdateStatus} from '../../src/gen/bindings/AppUpdateStatus';
 import {pairingFixture} from './pairing';
-import {labSessionAttention,labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRelays,labNetwork,labRoadShare,labDoctor} from './world';
+import {networkSettingsFixture} from './network-settings-fixture';
+import type {NetworkPolicy, RelayWant} from '../../src/api';
+import {labSessionAttention,labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRoadShare,labDoctor} from './world';
 import {canonicalChatFixture} from '../../scripts/fixtures/canonical-chat-routes.mjs';
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import type {SessionRow} from '../../src/gen/bindings/SessionRow';
@@ -75,6 +77,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
   const quota = labQuota(devices);
+  let network = networkSettingsFixture();
   // Only Lab browser storage is touched; metadata comes from the native key table.
   const settingsKey = 'khor.lab.settings-values';
   const readSetting = (key:string) => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -332,6 +335,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
             localStorage.removeItem(editorDiskKey);
             localStorage.removeItem('khor.lab.read-server');
           } catch { /* Server fixture has no browser storage. */ }
+          network = networkSettingsFixture();
           settingsValues={...settingsProfile};try { localStorage.removeItem(settingsKey); } catch { /* Server fixture has no browser storage. */ }
           holdSettings=false;refuseSetting=false;pendingSettings.length=0;
           failAcpSetup=false;acpSetupCalls.length=0;
@@ -542,8 +546,12 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case 'app_update_download': appUpdate.phase='ready';answer=appUpdate;break;
           case 'app_update_companions': answer=appUpdate;break;
           case 'app_update_install': throw new FixtureRefusal('Lab does not install applications');
-          case "relays": answer=labRelays;break;
-          case "network_settings": answer=labNetwork;break;
+          case "relays": answer=network.relays();break;
+          case "network_settings": answer=network.settings();break;
+          case "set_network_policy": answer=network.setPolicy(body.policy as NetworkPolicy);break;
+          case "set_relays": answer=network.setRelays(body.relays as RelayWant[]);break;
+          case "set_preferred_relay": answer=network.setPreferred(typeof body.url === "string" ? body.url : null);break;
+          case "import_network_profile": answer=network.importProfile(String(body.input));break;
           case "road_share": answer=labRoadShare;break;
           case "doctor": answer=labDoctor;break;
           case "config": answer = settingsRows(); break;

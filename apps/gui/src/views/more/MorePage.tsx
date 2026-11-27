@@ -1,6 +1,6 @@
 // More is one main-app destination with stable navigation. Its page bodies
 // share the existing Region on desktop and list/detail navigation on mobile.
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { MidName } from "@/browse/TabStrip";
 import { IconBack, IconChevronRight } from "@/components/icons";
@@ -8,6 +8,7 @@ import { PageAction, PageSubtitle } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { GlassCircle } from "@/components/Glass";
 import { cn } from "@/lib/utils";
+import { useNarrow } from "@/hooks/use-narrow";
 import {SectionHeading} from "@/components/settings/SectionHeading";
 export {SectionHeading as MoreSectionHeading} from "@/components/settings/SectionHeading";
 import { config, gui } from "@/gen/catalog";
@@ -73,6 +74,7 @@ export function MoreFrame({
   onClose,
   actions,
   subtitle,
+  detailTitle,
   children,
 }: {
   page: MorePage;
@@ -95,6 +97,8 @@ export function MoreFrame({
       rather than an invented one. Wide only: the narrow head is one
       line, the name. */
   subtitle?: ReactNode;
+  /** Name of a detail shown within the selected settings category. */
+  detailTitle?: string;
   // ⚠️ 墓碑 (2026-09-28): `bleed` stood here — the body filling the frame
   // instead of a reading column, for the one page that was a picture
   // (网络, 「网络就搞成地图」). 网络 is rows now and the map lives on the
@@ -105,11 +109,17 @@ export function MoreFrame({
       开关」 docs/MORE.md refuses. */
   children?: ReactNode;
 }) {
+  const title = detailTitle ?? moreName(page);
+  const narrow = useNarrow();
+  const scrollArea = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scrollArea.current) scrollArea.current.scrollTop = 0;
+  }, [detailTitle]);
   return (
-    <PageName.Provider value={moreName(page)}>
+    <PageName.Provider value={title}>
       <section
         data-more-page={page}
-        aria-label={moreName(page)}
+        aria-label={title}
         // Settings groups are cards on the canvas (components/SettingsGroup),
         // so a page of rows stands on `background`. **The one place the
         // frame reaches into the board** (10-layout's written exception):
@@ -139,7 +149,7 @@ export function MoreFrame({
                   <IconBack />
                 </GlassCircle>
                 <h1 className={cn("min-w-0 flex-1 truncate text-center text-title-sm font-title", !actions && "pr-glass-btn")}>
-                  {moreName(page)}
+                  {title}
                 </h1>
                 {/* No R0 on this face: `PageAction` leaves them here,
                     in the one place a page's buttons are — the end of its
@@ -155,12 +165,22 @@ export function MoreFrame({
             )
           }
         </NarrowHead>
-        <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto p-pane">
+        <div ref={scrollArea} data-nav-clear className="min-h-0 flex-1 overflow-y-auto p-pane">
           {/* Capped at a reading measure and centred: these pages are
               prose and rows rather than a table, and a settings row
               stretched across a 1400 window puts its label and its
               control at opposite ends of the screen. */}
-          <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
+          <div className="mx-auto flex w-full max-w-measure flex-col gap-group">
+            {detailTitle && !narrow && (
+              <div className="flex items-center gap-row">
+                <GlassCircle aria-label={gui.back} data-more-back onClick={onClose}>
+                  <IconBack />
+                </GlassCircle>
+                <h1 className="text-title-sm font-title">{detailTitle}</h1>
+              </div>
+            )}
+            {children}
+          </div>
         </div>
       </section>
     </PageName.Provider>

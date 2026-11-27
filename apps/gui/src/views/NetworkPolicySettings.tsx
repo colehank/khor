@@ -5,6 +5,7 @@ import {
   type NetworkPolicy, type NetworkSettings,
 } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
+import { NavRow } from "@/components/settings/NavRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Dialog, DialogHeader, DialogTitle, TaskActions, TaskOverlay } from "@/c
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
-import { MoreFact, MoreSection } from "@/views/more/MorePage";
+import { MoreSection } from "@/views/more/MorePage";
 
 const automatic = {
   khor_relays: true,
@@ -44,11 +45,25 @@ function matches(policy: NetworkPolicy, preset: typeof automatic) {
   return (Object.keys(preset) as Toggle[]).every((key) => policy[key] === preset[key]);
 }
 
+export type NetworkDetail = "relays" | "addressing" | "profile" | "advanced";
+
+export function networkDetailTitle(detail: NetworkDetail) {
+  return {
+    relays: gui.net_relays,
+    addressing: gui.net_addressing,
+    profile: gui.net_profile_files,
+    advanced: gui.advanced,
+  }[detail];
+}
+
 export function NetworkPolicySettings({
-  settings, onChange, relayRows,
+  settings, onChange, detail, onOpenDetail, relayRows, advancedRows,
 }: {
   settings: NetworkSettings;
+  detail: NetworkDetail | null;
+  onOpenDetail: (detail: NetworkDetail) => void;
   relayRows: ReactNode;
+  advancedRows: ReactNode;
   onChange: (settings: NetworkSettings) => void;
 }) {
   const { profile, source } = settings;
@@ -106,54 +121,82 @@ export function NetworkPolicySettings({
     }), true);
   };
 
+  const relaySummary = [
+    (policy.khor_relays || policy.n0_relays) && gui.net_summary_public_infrastructure,
+    profile.relays.length > 0 && gui.net_summary_custom_services,
+    policy.peer_relay && policy.advertised_relays && gui.net_summary_peer,
+  ].filter(Boolean).join(", ");
+  const addressingSummary = [
+    policy.khor_lookup && gui.net_summary_khor,
+    (policy.n0_lookup || policy.n0_publish) && gui.net_summary_public_lookup,
+    (policy.pkarr.length > 0 || policy.dns_origins.length > 0) && gui.net_summary_custom_services,
+    policy.mdns && gui.net_summary_local,
+  ].filter(Boolean).join(", ");
+
   return <>
-    <MoreSection name="network-configuration" label={gui.net_profile}>
-      <PopupRow
-        name="network-preset"
-        label={gui.net_profile_mode}
-        hint={mode === "private" ? gui.net_profile_private_note : gui.net_profile_auto_note}
-        value={mode}
-        choices={[
-          { value: "automatic", label: gui.net_profile_auto },
-          { value: "private", label: gui.net_profile_private },
-          ...(mode === "custom" ? [{ value: "custom", label: gui.net_profile_custom }] : []),
-        ]}
-        onPick={(value) => {
-          if (value === "custom") return;
-          const preset = value === "private" ? privateOnly : automatic;
-          void run(() => setNetworkPolicy({ ...policy, ...preset }));
-        }}
-      />
-      <MoreFact name="network-resident" label={gui.net_profile_state}>{status}</MoreFact>
-      {settings.invalid && <p className="px-row py-in text-callout text-destructive">{gui.net_profile_invalid}</p>}
-      {error && !form && <p role="alert" className="px-row py-in text-callout text-destructive">{error}</p>}
-      <ActionRow name="network-import" label={gui.net_profile_import}
+    {settings.invalid && <p role="alert" className="text-callout text-destructive">{gui.net_profile_invalid}</p>}
+    {error && !form && <p role="alert" className="text-callout text-destructive">{error}</p>}
+    {detail && settings.pending_restart && <p role="status" className="px-row text-callout text-muted-foreground">{status}</p>}
+    {!detail && <>
+      <MoreSection name="network-configuration">
+        <PopupRow
+          name="network-preset"
+          label={gui.net_profile_mode}
+          hint={status}
+          value={mode}
+          choices={[
+            { value: "automatic", label: gui.net_profile_auto },
+            { value: "private", label: gui.net_profile_private },
+            ...(mode === "custom" ? [{ value: "custom", label: gui.net_profile_custom }] : []),
+          ]}
+          onPick={(value) => {
+            if (value === mode || value === "custom") return;
+            const preset = value === "private" ? privateOnly : automatic;
+            void run(() => setNetworkPolicy({ ...policy, ...preset }));
+          }}
+        />
+        <NavRow name="network-open-relays" label={gui.net_relays}
+          value={relaySummary || (policy.advertised_relays ? gui.net_summary_advertised : gui.net_summary_no_sources)} onOpen={() => onOpenDetail("relays")} />
+        <NavRow name="network-open-addressing" label={gui.net_addressing}
+          value={addressingSummary || gui.net_summary_no_sources} onOpen={() => onOpenDetail("addressing")} />
+        <NavRow name="network-open-profile" label={gui.net_profile_files}
+          value={gui.net_summary_profile_actions} onOpen={() => onOpenDetail("profile")} />
+      </MoreSection>
+      <MoreSection name="network-more">
+        <NavRow name="network-open-advanced" label={gui.advanced} onOpen={() => onOpenDetail("advanced")} />
+      </MoreSection>
+    </>}
+    {detail === "relays" && <MoreSection name="relays" mark={{ "data-net-settings": "" }}>
+      {toggle("khor_relays", gui.net_relay_khor, gui.net_profile_auto_note)}
+      {toggle("n0_relays", gui.net_relay_n0)}
+      {toggle("advertised_relays", gui.net_relay_advertised, gui.net_relay_advertised_note)}
+      {toggle("peer_relay", gui.net_relay_peers, gui.net_relay_peers_note, !policy.advertised_relays)}
+      {relayRows}
+    </MoreSection>}
+    {detail === "addressing" && <MoreSection name="network-addressing">
+      {toggle("khor_lookup", gui.net_lookup_khor)}
+      {toggle("n0_lookup", gui.net_lookup_n0)}
+      {toggle("n0_publish", gui.net_publish_n0)}
+      <ActionRow name="network-lookup-custom" label={gui.net_lookup_private}
+        actionLabel={gui.net_lookup_edit} onPress={() => open("lookup")} />
+      {toggle("mdns", gui.net_lookup_mdns)}
+    </MoreSection>}
+    {detail === "profile" && <MoreSection name="network-profile-files">
+      <ActionRow name="network-import" label={gui.net_profile_input}
         actionLabel={gui.net_profile_import} onPress={() => open("import")} />
       <ActionRow name="network-export" label={gui.net_profile_export}
         actionLabel={gui.net_profile_export_action} onPress={() => open("export")} />
       {source && <ActionRow name="network-source" label={gui.net_profile_source}
         hint={<span className="break-all">{source.url}</span>} actionLabel={gui.net_profile_refresh}
         onPress={() => void run(refreshNetworkProfile)} />}
-    </MoreSection>
-    <MoreSection name="relays" label={gui.net_relays} mark={{ "data-net-settings": "" }}>
-      {toggle("khor_relays", gui.net_relay_khor)}
-      {toggle("n0_relays", gui.net_relay_n0)}
-      {toggle("advertised_relays", gui.net_relay_advertised, gui.net_relay_advertised_note)}
-      {relayRows}
-    </MoreSection>
-    <MoreSection name="network-addressing" label={gui.net_addressing}>
-      {toggle("khor_lookup", gui.net_lookup_khor)}
-      {toggle("n0_lookup", gui.net_lookup_n0)}
-      {toggle("n0_publish", gui.net_publish_n0)}
-      <ActionRow name="network-lookup-custom" label={gui.net_lookup_private}
-        actionLabel={gui.net_lookup_edit} onPress={() => open("lookup")} />
-      {toggle("publish_direct", gui.net_publish_direct, gui.net_publish_direct_note)}
-      {toggle("public_dns_fallback", gui.net_dns_fallback, gui.net_dns_fallback_note)}
-    </MoreSection>
-    <MoreSection name="network-device-paths" label={gui.net_device_paths}>
-      {toggle("mdns", gui.net_lookup_mdns)}
-      {toggle("peer_relay", gui.net_relay_peers, gui.net_relay_peers_note, !policy.advertised_relays)}
-    </MoreSection>
+    </MoreSection>}
+    {detail === "advanced" && <>
+      <MoreSection name="network-advanced">
+        {toggle("publish_direct", gui.net_publish_direct, gui.net_publish_direct_note)}
+        {toggle("public_dns_fallback", gui.net_dns_fallback, gui.net_dns_fallback_note)}
+      </MoreSection>
+      {advancedRows}
+    </>}
     <Dialog open={form !== null} onOpenChange={(open) => !open && !busy && setForm(null)}>
       <TaskOverlay purpose="edit">
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>

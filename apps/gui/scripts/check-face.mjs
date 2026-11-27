@@ -2231,6 +2231,15 @@ ${serverLog}`);
     in_use: relayOnly ? relayMine : [...new Set(["http://relay.gate:4433", ...relayMine])],
     only_mine: relayOnly,
   });
+  await page.route("**/network_settings", (r) => r.fulfill({ json: {
+    source: null, explicit: false, invalid: false, resident: true, pending_restart: relaysSet.length > 0,
+    profile: { version: 1, relays: relayMine.map(url => ({url, qad: null})), preferred: null, policy: {
+      khor_relays: !relayOnly, n0_relays: !relayOnly, khor_lookup: !relayOnly,
+      n0_lookup: !relayOnly, n0_publish: !relayOnly, mdns: true,
+      peer_relay: true, advertised_relays: true, publish_direct: false,
+      public_dns_fallback: true, pkarr: [], dns_origins: [],
+    } },
+  }}));
   await page.route("**/relays", (r) => {
     relaysAsked.push(Date.now());
     r.fulfill({ contentType: "application/json", body: JSON.stringify(relayChoices()) });
@@ -3068,10 +3077,10 @@ ${serverLog}`);
     {
       // The 网络 page, reached through 「…」 — a page of settings rows
       // since 2026-09-28 (the map moved to the machines overview, which
-      // the devices stop above measures). The anchor is its last group's
-      // switch, which is only there once the relays have answered.
+      // the devices stop above measures). The relay entry is present
+      // after the connection settings have loaded.
       name: "the network page",
-      anchor: '[data-more-page="connection"] [data-relays-only-mine]',
+      anchor: '[data-more-page="connection"] [data-setting-row-name="network-open-relays"]',
       go: toMesh,
       after: async () => {
         await press("[data-more-close]");
@@ -12765,6 +12774,8 @@ ${serverLog}`);
       // is 我的 khor's. Every capability is still read here, each on its
       // page now.
       const relaysBefore = relaysAsked.length;
+      const relayEntry = '[data-more-page="connection"] [data-setting-row-name="network-open-relays"]';
+      const advancedEntry = '[data-more-page="connection"] [data-setting-row-name="network-open-advanced"]';
       // 状态 first, on 诊断.
       const status = (await openMore("doctor"))
         ? await page.evaluate(() => ({
@@ -12776,7 +12787,8 @@ ${serverLog}`);
         fail(`probe dead: ${posture} · 「…」 → 连接 did not open`);
         continue;
       }
-      await until(3_000, async () => (await page.locator('[data-more-page="connection"] [data-relays-only-mine]').count()) > 0);
+      await press(relayEntry);
+      await until(3_000, async () => (await page.locator("[data-relays-in-use]").count()) > 0);
       const net = await page.evaluate(() => {
         const el = document.querySelector('[data-more-page="connection"]');
         if (!el) return null;
@@ -12798,7 +12810,7 @@ ${serverLog}`);
           inUse: el.querySelector("[data-relays-in-use]")?.textContent?.trim() ?? null,
           mine: el.querySelectorAll("[data-relay-mine]").length,
           add: el.querySelectorAll("[data-relay-add]").length,
-          onlyMine: el.querySelectorAll("[data-relays-only-mine]").length,
+          sources: el.querySelectorAll('[data-more-section="relays"] [data-setting-row-name="khor_relays"], [data-more-section="relays"] [data-setting-row-name="n0_relays"]').length,
         };
       });
       if (net) Object.assign(net, status);
@@ -12818,20 +12830,14 @@ ${serverLog}`);
               "in its body — they are the machines landing's ＋ and nowhere else (10-layout, 2026-09-30)",
           );
         }
-        if (net.pause !== 1 || net.leave !== 0) {
-          fail(`${posture}: 连接 offers ${net.pause} 暂停同步 switch(es) and ${net.leave} 离开网络 — the switch, and 离开 is 我的 khor's (UX-16)`);
+        if (net.pause !== 0 || net.leave !== 0) {
+          fail(`${posture}: 连接 offers ${net.pause} 暂停同步 switch(es) and ${net.leave} 离开网络 — pause lives in Advanced, and 离开 is in 我的 khor`);
         }
         if (!net.me || !net.me.includes("gate") || !net.connected) {
           fail(`${posture}: 状态 reads 本机 ${JSON.stringify(net.me)} / 已连接的机器 ${JSON.stringify(net.connected)} — both are facts khor holds`);
         }
-        // **中继 is open on arrival and read on arrival** (2026-09-28): the
-        // fold under 高级 went — `relays` is a read of this store, not a
-        // dial — so the rows are there and the call was made.
-        if (net.fold !== 0 || !net.inUse || net.mine === 0 || net.add !== 1 || net.onlyMine !== 1) {
-          fail(
-            `${posture}: 中继 reads ${JSON.stringify({ fold: net.fold, inUse: net.inUse, mine: net.mine, add: net.add, onlyMine: net.onlyMine })} — ` +
-              "使用中, 自己的中继 with its entries and 添加中继, and 只使用自己的中继, open (views/NetSettings)",
-          );
+        if (net.fold !== 0 || !net.inUse || net.mine === 0 || net.add !== 1 || net.sources !== 2) {
+          fail(`${posture}: 中继 should group both source switches, configured URLs and the add action: ${JSON.stringify(net)}`);
         }
         if (relaysAsked.length === relaysBefore) {
           fail(`${posture}: the 网络 page drew 中继 without asking for the relays — what it shows is not the node's answer`);
@@ -12866,6 +12872,8 @@ ${serverLog}`);
         // 暂停同步 — a switch now, and the same round trip: the file says
         // paused, the switch says it, the page's 本机 says it, and so does
         // the rail's face (docs/MORE.md 暂停: 「侧栏头像上看得出」).
+        await press("[data-more-back]:visible");
+        await press(advancedEntry);
         const talking = await page.evaluate(() => document.querySelector("[data-net-pause]")?.getAttribute("aria-checked") ?? null);
         await press("[data-net-pause]");
         await until(2_000, async () =>
@@ -12876,10 +12884,12 @@ ${serverLog}`);
           rail: !!document.querySelector("[data-rail-mark][data-paused]"),
         }));
         // 本机's state word is 诊断's 状态 now (UX-16).
+        await press("[data-more-back]:visible");
         whilePaused.state = (await openMore("doctor"))
           ? await page.evaluate(() => document.querySelector("[data-net-state]")?.getAttribute("data-net-state") ?? null)
           : null;
         await openMore("connection");
+        await press(advancedEntry);
         await until(3_000, async () => (await page.locator("[data-net-pause]").count()) > 0);
         console.log(`网络 ${posture} · 暂停: ${JSON.stringify({ talking, ...whilePaused, sent: gatePaused })}`);
         if (talking !== "false" || whilePaused.on !== "true" || gatePaused !== true) {
@@ -13915,7 +13925,7 @@ ${serverLog}`);
     const READY = {
       about: '[data-more-fact="store-path"]',
       appearance: '[data-config-row="theme"]',
-      connection: '[data-more-page="connection"] [data-relays-only-mine]',
+      connection: '[data-more-page="connection"] [data-setting-row-name="network-open-relays"]',
       security: '[data-config-row="confirm-delete"]',
       me: "[data-iface]",
       doctor: "[data-doctor-again]",
