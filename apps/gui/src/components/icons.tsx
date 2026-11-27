@@ -110,10 +110,11 @@ const LIVE = {
   search: reshare(fit(1.84, 1.84, 12.63), ROUND, LIGHT),
   grip: fit(1.82, 1.82, 12.37), // square
   plus: reshare(fit(1.96, 1.96, 12.08), PLAIN, BARE),
-  documentThumbnails: fit(1.5, 1.5, 13),
-  documentComment: fit(1.5, 1.5, 13),
-  documentNotes: fit(2, 1.1, 13.8),
-  documentRevisions: fit(1.4, 1.1, 13.8),
+  // Centre the visible outlines and match the search mark's ink extent.
+  documentThumbnails: fit(0, 0, 16),
+  documentComment: fit(0, 0.1, 16),
+  documentNotes: fit(-0.5, -0.5, 17),
+  documentRevisions: fit(-0.78, -0.5, 17),
   filter: fit(1, 1, 14), // square
   check: reshare(fit(1.96, 1.97, 12.07), ROUND, BARE),
   close: reshare(fit(3.28, 3.28, 9.44), ROUND, BARE),
