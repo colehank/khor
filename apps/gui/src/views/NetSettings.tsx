@@ -114,12 +114,14 @@ function RelayPathRow({ label, kind, source, active, plainHttp, keyed, preferred
             {source}
             {plainHttp && <> · {gui.relays_scheme_http}</>}
             {keyed && <span data-relay-keyed> · {gui.relays_keyed}</span>}
-            {preferred && <> · <span data-relay-preferred className="text-foreground">{gui.relays_preferred}</span></>}
           </span>
         </span>
-        {active && <span data-relay-path-status className="flex flex-none items-center gap-xxs text-callout text-foreground">
-          <IconCheck className="size-affordance" />
-          {gui.relays_in_use}
+        {(active || preferred) && <span data-relay-mark className="flex flex-none items-center gap-xxs text-callout text-foreground">
+          <IconCheck className="size-affordance flex-none" />
+          <span className="flex flex-col">
+            {active && <span data-relay-path-status>{gui.relays_in_use}</span>}
+            {preferred && <span data-relay-preferred>{gui.relays_preferred}</span>}
+          </span>
         </span>}
       </Row>
       {remove && <Button onClick={remove} disabled={busy} data-setting-trail className="min-h-touch min-w-touch flex-none">{gui.remove}</Button>}
