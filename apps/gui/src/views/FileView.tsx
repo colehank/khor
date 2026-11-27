@@ -1067,14 +1067,8 @@ function FileBody({
               />
             </div>
           )}
-          {/* Said once, under the document rather than over it: it is a
-              caveat about what you are reading, not a warning.
-
-              **A PDF that got here says something else**: it is not on
-              the words road because khor reads words, it is on it
-              because this browser draws no PDFs
-              (`khor_node::preview::PDF_HERE`), and that is a different
-              sentence about a different reason. */}
+          {/* Older backends can return a PDF's extracted text. Identify
+              that fallback under the document. */}
           <div
             data-doc-note={look.kind}
             className="flex-none border-t px-3 py-1.5 text-callout text-muted-foreground"

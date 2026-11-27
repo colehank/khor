@@ -212,6 +212,14 @@ pub fn kind(path: &str) -> Kind {
 /// the same page is served to a phone looking at another machine's
 /// khor.
 ///
+/// Whether the platform WebView has its own PDF viewer. The GUI's
+/// original-file response is independent of this legacy capability.
+pub const PDF_HERE: bool = cfg!(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows"
+));
+
 /// A file's bytes as markdown, whatever it started as.
 ///
 /// **Answers `Ok("")` for a document with no words in it**, which is a

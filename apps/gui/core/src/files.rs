@@ -200,10 +200,7 @@ pub async fn search(root: &Path, machine: &str, dir: &str, query: &str) -> Resul
     })
 }
 
-/// Whether the browser this face runs in will draw a PDF itself
-/// (`khor_node::preview::PDF_HERE`). False on Linux (WebKitGTK ships no
-/// viewer) and Android, where khor shows the PDF's words instead and
-/// says that is what they are.
+/// The WebView's built-in PDF capability, kept for existing clients.
 pub fn pdf_here() -> bool {
     khor_node::preview::PDF_HERE
 }
@@ -919,20 +916,16 @@ pub struct Preview {
     pub kind: String,
     #[ts(type = "number")]
     pub total: u64,
-    /// `image`, `svg` and `pdf`: the bytes, base64, ready for the
-    /// browser to decode. Empty otherwise — **and empty on a `pdf`
-    /// means the words are in `html` instead**, because this platform's
-    /// browser has no PDF viewer (`khor_node::preview::PDF_HERE`). One
-    /// kind, two shapes, and which one it is, is which field is full.
+    /// Base64 original file bytes for a complete image, SVG, PDF or a
+    /// supported Office file requested for layout rendering.
     pub data: String,
     /// The media type those bytes need to be announced with, or empty.
     /// **Carried rather than derived on the far side**: a `data:` URL
     /// with no media type is rendered only by sniffing, and a browser
     /// that sniffs wrong draws a broken-image glyph with no sentence.
     pub media: String,
-    /// `doc`, and a `pdf` on a platform that cannot draw one: the file
-    /// rendered to HTML, already escaped (`khor_node::preview::html`).
-    /// Empty otherwise.
+    /// A document's extracted text as escaped HTML when requested
+    /// for text preview. Empty for original-file responses.
     pub html: String,
     /// The file is bigger than a preview carries and this is its
     /// beginning. **An image that is cut is not shown at all** — half a
