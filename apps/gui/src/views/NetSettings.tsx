@@ -106,18 +106,15 @@ function RelayPathRow({ label, kind, source, active, plainHttp, keyed, preferred
   return (
     <div data-more-row data-relay-path={kind} data-relay-active={active}
       data-relay-mine={remove ? label : undefined} className="flex min-w-0 items-center gap-row">
-      <Row className={`flex min-w-0 flex-1 items-center gap-row text-left ${pick ? "min-h-touch rounded-sm hover:bg-fill focus-visible:outline-2 focus-visible:outline-ring" : ""}`}
+      <Row className={`flex min-w-0 flex-1 items-center gap-row text-left ${pick ? "group/relay min-h-touch rounded-sm focus-visible:outline-2 focus-visible:outline-ring" : ""}`}
         {...(pick ? { type: "button" as const, onClick: pick, disabled: busy, "aria-pressed": !!preferred, "data-relay-pick": "" } : {})}>
-        {pick && <span aria-hidden="true" className="grid size-affordance flex-none place-items-center rounded-full border border-muted-foreground">
-          {preferred && <span className="size-xxs rounded-full bg-foreground" />}
-        </span>}
         <span className="flex min-w-0 flex-1 flex-col">
-          <span data-selectable={pick ? undefined : ""} className="text-body [overflow-wrap:anywhere]">{label}</span>
+          <span data-selectable={pick ? undefined : ""} className={`text-body [overflow-wrap:anywhere] ${pick && !preferred && !busy ? "underline-offset-2 group-hover/relay:underline" : ""}`}>{label}</span>
           <span className="text-callout text-muted-foreground">
             {source}
             {plainHttp && <> · {gui.relays_scheme_http}</>}
             {keyed && <span data-relay-keyed> · {gui.relays_keyed}</span>}
-            {preferred && <span data-relay-preferred> · {gui.relays_preferred}</span>}
+            {preferred && <> · <span data-relay-preferred className="text-foreground">{gui.relays_preferred}</span></>}
           </span>
         </span>
         {active && <span data-relay-path-status className="flex flex-none items-center gap-xxs text-callout text-foreground">

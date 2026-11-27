@@ -3176,7 +3176,7 @@ conn-peer-rtt = "往返 {0}"
 conn-peer-failed = "上次出错（{0}）：{1}"
 conn-unanswered = "常驻没有回答"
 relays-preferred = "首选中继"
-relays-preferred-note = "可达时，优先用作本机的中继入口。"
+relays-preferred-note = "优先使用所选中继，不可达时自动回退"
 # 等远端机器回应时的三档（round NET-FIX）：不到 1 秒只有骨架；1 秒起骨架下多一个
 # 转圈；8 秒起说清在等哪台、等了多久，并给「停止等待」「重试」。
 waiting-on = "仍在等待 {0} 回应 · {1}"
