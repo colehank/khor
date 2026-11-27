@@ -12810,7 +12810,8 @@ ${serverLog}`);
           inUse: el.querySelector("[data-relays-in-use]")?.textContent?.trim() ?? null,
           mine: el.querySelectorAll("[data-relay-mine]").length,
           add: el.querySelectorAll("[data-relay-add]").length,
-          sources: el.querySelectorAll('[data-more-section="relays"] [data-setting-row-name="khor_relays"], [data-more-section="relays"] [data-setting-row-name="n0_relays"]').length,
+          sources: el.querySelectorAll('[data-more-section="network-public-infrastructure"] [data-setting-row-name="khor_relays"], [data-more-section="network-public-infrastructure"] [data-setting-row-name="n0_relays"]').length,
+          status: el.querySelector('[data-more-section="network-detail-status"] [data-more-fact="network-config-state"]')?.textContent?.trim(),
         };
       });
       if (net) Object.assign(net, status);
@@ -12836,8 +12837,8 @@ ${serverLog}`);
         if (!net.me || !net.me.includes("gate") || !net.connected) {
           fail(`${posture}: 状态 reads 本机 ${JSON.stringify(net.me)} / 已连接的机器 ${JSON.stringify(net.connected)} — both are facts khor holds`);
         }
-        if (net.fold !== 0 || !net.inUse || net.mine === 0 || net.add !== 1 || net.sources !== 2) {
-          fail(`${posture}: 中继 should group both source switches, configured URLs and the add action: ${JSON.stringify(net)}`);
+        if (net.fold !== 0 || !net.inUse || net.mine === 0 || net.add !== 1 || net.sources !== 2 || !net.status) {
+          fail(`${posture}: 中继 should show configuration status, both public sources, configured URLs and the add action: ${JSON.stringify(net)}`);
         }
         if (relaysAsked.length === relaysBefore) {
           fail(`${posture}: the 网络 page drew 中继 without asking for the relays — what it shows is not the node's answer`);

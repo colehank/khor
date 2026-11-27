@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 
 import {
   importNetworkProfile, refreshNetworkProfile, setNetworkPolicy,
-  type NetworkPolicy, type NetworkSettings,
+  type DeviceRow, type NetworkPolicy, type NetworkSettings,
 } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { NavRow } from "@/components/settings/NavRow";
@@ -13,7 +13,7 @@ import { Dialog, DialogHeader, DialogTitle, TaskActions, TaskOverlay } from "@/c
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
-import { MoreSection } from "@/views/more/MorePage";
+import { MoreFact, MoreSection } from "@/views/more/MorePage";
 
 const automatic = {
   khor_relays: true,
@@ -57,11 +57,12 @@ export function networkDetailTitle(detail: NetworkDetail) {
 }
 
 export function NetworkPolicySettings({
-  settings, onChange, detail, onOpenDetail, relayRows, advancedRows,
+  settings, onChange, detail, onOpenDetail, devices, relayRows, advancedRows,
 }: {
   settings: NetworkSettings;
   detail: NetworkDetail | null;
   onOpenDetail: (detail: NetworkDetail) => void;
+  devices: DeviceRow[];
   relayRows: ReactNode;
   advancedRows: ReactNode;
   onChange: (settings: NetworkSettings) => void;
@@ -76,7 +77,8 @@ export function NetworkPolicySettings({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const mode = matches(policy, automatic) ? "automatic" : matches(policy, privateOnly) ? "private" : "custom";
-  const status = settings.pending_restart ? gui.net_profile_restart
+  const status = settings.invalid ? gui.net_detail_invalid
+    : settings.pending_restart ? gui.net_profile_restart
     : settings.resident ? gui.net_profile_active : gui.net_profile_stopped;
   const title = form === "import" ? gui.net_profile_import
     : form === "lookup" ? gui.net_lookup_private : gui.net_profile_export;
@@ -124,19 +126,37 @@ export function NetworkPolicySettings({
   const relaySummary = [
     (policy.khor_relays || policy.n0_relays) && gui.net_summary_public_infrastructure,
     profile.relays.length > 0 && gui.net_summary_custom_services,
+    policy.advertised_relays && gui.net_summary_advertised,
     policy.peer_relay && policy.advertised_relays && gui.net_summary_peer,
-  ].filter(Boolean).join(", ");
+  ].filter(Boolean).join(" · ") || gui.net_summary_no_sources;
   const addressingSummary = [
-    policy.khor_lookup && gui.net_summary_khor,
-    (policy.n0_lookup || policy.n0_publish) && gui.net_summary_public_lookup,
+    (policy.khor_lookup || policy.n0_lookup || policy.n0_publish) && gui.net_summary_public_infrastructure,
     (policy.pkarr.length > 0 || policy.dns_origins.length > 0) && gui.net_summary_custom_services,
     policy.mdns && gui.net_summary_local,
-  ].filter(Boolean).join(", ");
+  ].filter(Boolean).join(" · ") || gui.net_summary_no_sources;
+  const relayRoutes = detail === "relays" ? [...new Set(devices.flatMap((device) => {
+    if (device.me) return [];
+    if (device.hop === "relay") return [device.relay || gui.net_relays];
+    if (device.hop === "forwarded") return [device.via ? gui.add_step_via(device.via) : gui.net_summary_peer];
+    return [];
+  }))] : [];
+  const showDetailStatus = detail === "relays" || detail === "addressing";
 
   return <>
     {settings.invalid && <p role="alert" className="text-callout text-destructive">{gui.net_profile_invalid}</p>}
     {error && !form && <p role="alert" className="text-callout text-destructive">{error}</p>}
-    {detail && settings.pending_restart && <p role="status" className="px-row text-callout text-muted-foreground">{status}</p>}
+    {showDetailStatus && <MoreSection name="network-detail-status">
+      <MoreFact name="network-config-state" label={gui.net_detail_config_status}>
+        <span role="status">{status}</span>
+      </MoreFact>
+      <MoreFact name="network-config-sources" label={gui.net_detail_config_sources}>
+        {detail === "relays" ? relaySummary : addressingSummary}
+      </MoreFact>
+      {detail === "relays" && <MoreFact name="network-relay-routes" label={gui.net_detail_relay_routes}>
+        {relayRoutes.join(" · ") || gui.net_detail_no_relay_routes}
+      </MoreFact>}
+    </MoreSection>}
+    {detail && !showDetailStatus && settings.pending_restart && <p role="status" className="px-row text-callout text-muted-foreground">{status}</p>}
     {!detail && <>
       <MoreSection name="network-configuration">
         <PopupRow
@@ -156,9 +176,9 @@ export function NetworkPolicySettings({
           }}
         />
         <NavRow name="network-open-relays" label={gui.net_relays}
-          value={relaySummary || (policy.advertised_relays ? gui.net_summary_advertised : gui.net_summary_no_sources)} onOpen={() => onOpenDetail("relays")} />
+          value={relaySummary} onOpen={() => onOpenDetail("relays")} />
         <NavRow name="network-open-addressing" label={gui.net_addressing}
-          value={addressingSummary || gui.net_summary_no_sources} onOpen={() => onOpenDetail("addressing")} />
+          value={addressingSummary} onOpen={() => onOpenDetail("addressing")} />
         <NavRow name="network-open-profile" label={gui.net_profile_files}
           value={gui.net_summary_profile_actions} onOpen={() => onOpenDetail("profile")} />
       </MoreSection>
@@ -166,21 +186,29 @@ export function NetworkPolicySettings({
         <NavRow name="network-open-advanced" label={gui.advanced} onOpen={() => onOpenDetail("advanced")} />
       </MoreSection>
     </>}
-    {detail === "relays" && <MoreSection name="relays" mark={{ "data-net-settings": "" }}>
-      {toggle("khor_relays", gui.net_relay_khor, gui.net_profile_auto_note)}
-      {toggle("n0_relays", gui.net_relay_n0)}
-      {toggle("advertised_relays", gui.net_relay_advertised, gui.net_relay_advertised_note)}
-      {toggle("peer_relay", gui.net_relay_peers, gui.net_relay_peers_note, !policy.advertised_relays)}
-      {relayRows}
-    </MoreSection>}
-    {detail === "addressing" && <MoreSection name="network-addressing">
-      {toggle("khor_lookup", gui.net_lookup_khor)}
-      {toggle("n0_lookup", gui.net_lookup_n0)}
-      {toggle("n0_publish", gui.net_publish_n0)}
-      <ActionRow name="network-lookup-custom" label={gui.net_lookup_private}
-        actionLabel={gui.net_lookup_edit} onPress={() => open("lookup")} />
-      {toggle("mdns", gui.net_lookup_mdns)}
-    </MoreSection>}
+    {detail === "relays" && <>
+      <MoreSection name="network-public-infrastructure" label={gui.net_summary_public_infrastructure}>
+        {toggle("khor_relays", gui.net_relay_khor, gui.net_profile_auto_note)}
+        {toggle("n0_relays", gui.net_relay_n0)}
+      </MoreSection>
+      <MoreSection name="relays" mark={{ "data-net-settings": "" }}>
+        {toggle("advertised_relays", gui.net_relay_advertised, gui.net_relay_advertised_note)}
+        {toggle("peer_relay", gui.net_relay_peers, gui.net_relay_peers_note, !policy.advertised_relays)}
+        {relayRows}
+      </MoreSection>
+    </>}
+    {detail === "addressing" && <>
+      <MoreSection name="network-public-infrastructure" label={gui.net_summary_public_infrastructure}>
+        {toggle("khor_lookup", gui.net_lookup_khor)}
+        {toggle("n0_lookup", gui.net_lookup_n0)}
+        {toggle("n0_publish", gui.net_publish_n0)}
+      </MoreSection>
+      <MoreSection name="network-addressing">
+        <ActionRow name="network-lookup-custom" label={gui.net_lookup_private}
+          actionLabel={gui.net_lookup_edit} onPress={() => open("lookup")} />
+        {toggle("mdns", gui.net_lookup_mdns)}
+      </MoreSection>
+    </>}
     {detail === "profile" && <MoreSection name="network-profile-files">
       <ActionRow name="network-import" label={gui.net_profile_input}
         actionLabel={gui.net_profile_import} onPress={() => open("import")} />

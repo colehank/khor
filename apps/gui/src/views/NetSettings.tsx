@@ -1,7 +1,7 @@
 // Relay endpoints and their local credentials on the connection settings page.
 import { useEffect, useState, type ReactNode } from "react";
 
-import { fetchNetworkSettings, fetchRelays, setPreferredRelay, setRelays, type NetworkSettings, type RelayChoices, type RelayWant } from "@/api";
+import { fetchNetworkSettings, fetchRelays, setPreferredRelay, setRelays, type DeviceRow, type NetworkSettings, type RelayChoices, type RelayWant } from "@/api";
 import { NetworkPolicySettings, type NetworkDetail } from "./NetworkPolicySettings";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
@@ -22,9 +22,10 @@ const kept = (url: string): RelayWant => ({ url, token: null });
 const scheme = (url: string) => (url.startsWith("https://") ? gui.relays_scheme_https : gui.relays_scheme_http);
 
 /** Mounting is reading: the page is drawn only while it is on screen. */
-export function NetSettings({ detail, onOpenDetail, advancedRows }: {
+export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
   detail: NetworkDetail | null;
   onOpenDetail: (detail: NetworkDetail) => void;
+  devices: DeviceRow[];
   advancedRows: ReactNode;
 }) {
   const [choices, setChoices] = useState<RelayChoices | null>(null);
@@ -175,6 +176,7 @@ export function NetSettings({ detail, onOpenDetail, advancedRows }: {
     settings={network}
     detail={detail}
     onOpenDetail={onOpenDetail}
+    devices={devices}
     relayRows={relayRows}
     advancedRows={advancedRows}
     onChange={(settings) => {

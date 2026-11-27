@@ -13,8 +13,7 @@ export function ConnectionPage({
   onClose,
   onChanged,
 }: {
-  /** The shell's own polled table: only whether this machine is in a
-      network is read off it. */
+  /** The shell's polled table supplies active relay paths and network membership. */
   devices: DeviceRow[];
   onClose: () => void;
   /** The device table changed (暂停 paints on every machine's row). */
@@ -63,7 +62,7 @@ export function ConnectionPage({
       detailTitle={detail ? networkDetailTitle(detail) : undefined}
       onClose={() => detail ? setDetail(null) : onClose()}
     >
-      <NetSettings detail={detail} onOpenDetail={setDetail} advancedRows={advancedRows} />
+      <NetSettings detail={detail} onOpenDetail={setDetail} devices={devices} advancedRows={advancedRows} />
     </MoreFrame>
   );
 }
