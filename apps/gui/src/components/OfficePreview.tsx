@@ -5,6 +5,7 @@ import {
   IconForward, IconMinus, IconPlus, IconSearch,
 } from "@/components/icons";
 import { ContentSearch } from "@/components/ContentSearch";
+import { GlassItem } from "@/components/Glass";
 import { RegionState } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -50,10 +51,15 @@ function OfficeTool({ className, ...props }: ComponentProps<typeof Button>) {
     className={cn("min-h-(--hit) min-w-(--hit) shrink-0 gap-in aria-pressed:bg-fill-strong aria-pressed:text-foreground [&_svg]:size-affordance", className)}/>;
 }
 
-export function OfficePreview({ format, source, onFallback }: {
+function OfficeGlassTool({ className, ...props }: ComponentProps<"button">) {
+  return <GlassItem {...props} on={props["aria-pressed"] === true} className={className}/>;
+}
+
+export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
   format: OfficeFormat;
   source: string | File;
   onFallback: (reason: OfficeFailure) => void;
+  toolbarSeat?: HTMLElement | null;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const mount = useRef<HTMLDivElement>(null);
@@ -264,10 +270,8 @@ export function OfficePreview({ format, source, onFallback }: {
     setShowComments(open => !open);
   };
 
-  return <div ref={root} tabIndex={-1} data-office-preview={format} data-band-boundary data-ready={!!reader || undefined}
-    className="@container/office flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
-    {reader && <div data-office-toolbar className="flex h-pane-head min-w-0 flex-none items-center border-b bg-background">
-      {finding ? <div data-office-find onKeyDownCapture={event => {
+  const Tool = toolbarSeat ? OfficeGlassTool : OfficeTool;
+  const findBar = <div data-office-find onKeyDownCapture={event => {
         if (event.key === "Escape" && !imeKey(event)) {
           event.preventDefault();
           event.stopPropagation();
@@ -286,44 +290,63 @@ export function OfficePreview({ format, source, onFallback }: {
           <Button size="icon" variant="ghost" aria-label={gui.match_next} disabled={!matches?.total} onClick={() => nextMatch(1)}><IconForward/></Button>
           <Button size="icon" variant="ghost" aria-label={gui.close} onClick={closeFind}><IconClose/></Button>
         </div>
-      </div> : <div role="toolbar" aria-label={gui.file_actions}
-        className="flex h-full min-w-0 flex-1 items-center gap-xxs overflow-x-auto px-in">
-        <OfficeTool data-office-find-open aria-label={gui.search_file} onClick={() => setFinding(true)}><IconSearch/></OfficeTool>
-        <div role="group" aria-label={gui.office_tool_zoom} className="flex shrink-0 items-center border-s ps-xxs">
-          <OfficeTool data-office-zoom-out aria-label={gui.office_zoom_out} onClick={() => zoom("zoomOut")}><IconMinus/></OfficeTool>
+      </div>;
+  const tools = reader && <>
+        <Tool data-office-find-open aria-label={gui.search_file} aria-pressed={toolbarSeat ? finding : undefined}
+          onClick={() => finding ? closeFind() : setFinding(true)}><IconSearch/></Tool>
+        <div role="group" aria-label={gui.office_tool_zoom}
+          className={cn("flex shrink-0 items-center", !toolbarSeat && "border-s ps-xxs")}>
+          {!toolbarSeat && <OfficeTool data-office-zoom-out aria-label={gui.office_zoom_out} onClick={() => zoom("zoomOut")}><IconMinus/></OfficeTool>}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <OfficeTool data-office-zoom aria-label={gui.office_tool_zoom + " " + Math.round(scale * 100) + "%"}
-                className="tabular-nums">{Math.round(scale * 100)}%</OfficeTool>
+              <Tool data-office-zoom aria-label={gui.office_tool_zoom + " " + Math.round(scale * 100) + "%"}
+                className={cn("tabular-nums", toolbarSeat && "w-auto px-in text-caption")}>{Math.round(scale * 100)}%</Tool>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="center">
+              {toolbarSeat && <>
+                <DropdownMenuItem data-office-zoom-out onSelect={event => {event.preventDefault(); zoom("zoomOut");}}><IconMinus/>{gui.office_zoom_out}</DropdownMenuItem>
+                <DropdownMenuItem data-office-zoom-in onSelect={event => {event.preventDefault(); zoom("zoomIn");}}><IconPlus/>{gui.office_zoom_in}</DropdownMenuItem>
+              </>}
               <DropdownMenuItem data-office-fit-width onSelect={() => zoom("fitWidth")}>{gui.office_fit_width}</DropdownMenuItem>
               {pages && <DropdownMenuItem data-office-fit-page onSelect={() => zoom("fitPage")}>{gui.office_fit_page}</DropdownMenuItem>}
               <DropdownMenuItem data-office-actual-size onSelect={() => zoom("actual")}>{gui.office_actual_size}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <OfficeTool data-office-zoom-in aria-label={gui.office_zoom_in} onClick={() => zoom("zoomIn")}><IconPlus/></OfficeTool>
+          {!toolbarSeat && <OfficeTool data-office-zoom-in aria-label={gui.office_zoom_in} onClick={() => zoom("zoomIn")}><IconPlus/></OfficeTool>}
         </div>
         <div className="flex shrink-0 items-center border-s ps-xxs">
-          {pages && <OfficeTool data-office-pages aria-label={gui.office_thumbnails} aria-pressed={showThumbnails}
+          {pages && <Tool data-office-pages aria-label={gui.office_thumbnails} aria-pressed={showThumbnails}
             aria-controls={thumbnailsId} onClick={() => setShowThumbnails(on => !on)}>
-            <IconDocumentThumbnails/><span className="hidden @lg/office:inline">{gui.office_tool_pages}</span>
-          </OfficeTool>}
-          <OfficeTool data-office-review aria-label={gui.office_comments} aria-pressed={showComments}
+            <IconDocumentThumbnails/>{!toolbarSeat && <span className="hidden @lg/office:inline">{gui.office_tool_pages}</span>}
+          </Tool>}
+          <Tool data-office-review aria-label={gui.office_comments} aria-pressed={showComments}
             aria-controls={commentsId} onClick={toggleComments}>
-            <IconDocumentComment/><span className="hidden @lg/office:inline">{gui.office_tool_comments}</span>
-          </OfficeTool>
-          {reader.revisions && <OfficeTool data-office-revisions aria-pressed={tracked}
+            <IconDocumentComment/>{!toolbarSeat && <span className="hidden @lg/office:inline">{gui.office_tool_comments}</span>}
+          </Tool>
+          {reader.revisions && <Tool data-office-revisions aria-pressed={tracked}
             aria-controls={wordReview ? commentsId : undefined}
             aria-label={tracked ? gui.office_hide_revisions : gui.office_revisions} onClick={changeRevisions}>
-            <IconDocumentRevisions/><span className="hidden @lg/office:inline">{gui.office_tool_revisions}</span>
-          </OfficeTool>}
-          {reader.notes && <OfficeTool data-office-notes aria-label={gui.office_notes} aria-pressed={showNotes}
+            <IconDocumentRevisions/>{!toolbarSeat && <span className="hidden @lg/office:inline">{gui.office_tool_revisions}</span>}
+          </Tool>}
+          {reader.notes && <Tool data-office-notes aria-label={gui.office_notes} aria-pressed={showNotes}
             aria-controls={notesId} onClick={() => setShowNotes(open => !open)}>
-            <IconDocumentNotes/><span className="hidden @lg/office:inline">{gui.office_tool_notes}</span>
-          </OfficeTool>}
+            <IconDocumentNotes/>{!toolbarSeat && <span className="hidden @lg/office:inline">{gui.office_tool_notes}</span>}
+          </Tool>}
         </div>
-      </div>}
+    </>;
+
+  return <div ref={root} tabIndex={-1} data-office-preview={format} data-band-boundary data-ready={!!reader || undefined}
+    className="@container/office relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
+    {reader && (toolbarSeat ? createPortal(
+      <div data-office-toolbar role="toolbar" aria-label={gui.file_actions} className="flex items-center">{tools}</div>,
+      toolbarSeat,
+    ) : <div data-office-toolbar className="flex h-pane-head min-w-0 flex-none items-center border-b bg-background">
+      {finding ? findBar : <div role="toolbar" aria-label={gui.file_actions}
+        className="flex h-full min-w-0 flex-1 items-center gap-xxs overflow-x-auto px-in">{tools}</div>}
+    </div>)}
+    {toolbarSeat && reader && finding && <div data-workspace-reader-find
+      className="absolute end-in top-in z-20 flex h-glass-btn w-(--dialog-w) max-w-[calc(100%-var(--gap-row))] items-center rounded-full border bg-popover shadow-(--shadow-float)">
+      {findBar}
     </div>}
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col @2xl/office:flex-row">

@@ -309,8 +309,10 @@ function FileBody({
   onCanEdit,
   editorHistory,
   localFile,
+  readingToolsSeat,
 }: {
   localFile?: File;
+  readingToolsSeat?: HTMLElement | null;
   handoff: FileHandoffControl;
   /** An open-tab owner may retain this across the file view's remount. */
   editorHistory?: EditorHistorySlot;
@@ -989,7 +991,7 @@ function FileBody({
     }
     const source = localFile ?? look?.data;
     if (localFile?.size === 0) return previewSurface(<RegionState state="empty" message={gui.doc_empty}/>);
-    if (inlineOffice && source) return previewSurface(<OfficePreview format={inlineOffice} source={source} onFallback={fallBackOffice}/>);
+    if (inlineOffice && source) return previewSurface(<OfficePreview format={inlineOffice} source={source} onFallback={fallBackOffice} toolbarSeat={readingToolsSeat}/>);
     if (lookError !== null || look !== null) return previewSurface(
       <Away path={path} handoff={handoff} total={total ?? null}
         word={look?.empty ? gui.doc_empty : ""} onTake={take} took={took}/>);

@@ -325,6 +325,11 @@ export function WorkspacePane({
   /** The middle column, where the reader's place is read and put back. */
   const mid = useRef<HTMLDivElement>(null);
   const handoff = useFileHandoff(machine, file ?? "", file !== null, mid);
+  const [readingToolsSeat, setReadingToolsSeat] = useState<HTMLDivElement | null>(null);
+  // Lab comparison of the workspace's existing action group and the Office row.
+  const previewReadingTools = !narrow && "__KHOR_LAB__" in window &&
+    new URLSearchParams(window.location.search).get("reading-tools") === "top" &&
+    file !== null && /\.(docx|pptx|xlsx)$/i.test(file);
   /** Where to put the reader once the face has changed (a source line). */
   const restore = useRef<number | null>(null);
   /** A ✓ waiting on its save before the face goes back to reading. */
@@ -1282,7 +1287,9 @@ export function WorkspacePane({
           history={git !== null}
           previewing={face === "preview"}
           faceToggle={rendererOf(file) !== null ? {face, run: face === "preview" ? editHere : readHere} : undefined}
-          toolbar={{ leading: shortcuts, actions: workspaceActions }}
+          toolbar={{ leading: shortcuts, actions: workspaceActions,
+            readingTools: previewReadingTools ?
+              <div ref={setReadingToolsSeat} className="flex items-center" data-workspace-reading-tools/> : undefined }}
           onRevision={(c) => {
             setRev(c);
             setRevCompare(false);
@@ -1610,6 +1617,7 @@ export function WorkspacePane({
           ) : (
             <FileView
               handoff={handoff}
+              readingToolsSeat={previewReadingTools ? readingToolsSeat : null}
               key={`${machine} ${file}`}
               machine={machine}
               path={file}

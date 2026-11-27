@@ -140,6 +140,7 @@ function useFileVerbs({
   onRevision,
   previewing,
   faceToggle,
+  readingTools,
   handoff,
   additionalActions = [],
   more = true,
@@ -153,6 +154,7 @@ function useFileVerbs({
   previewing?: boolean;
   /** Independent preview/source toggle grouped with the more menu. */
   faceToggle?: { face: "source" | "preview"; run: () => void };
+  readingTools?: ReactNode;
   machine: string;
   path: string;
   here: boolean;
@@ -219,7 +221,7 @@ function useFileVerbs({
   ];
   const afterClose=useRef<FileMenuAction | null>(null);
   useLayoutEffect(() => () => { afterClose.current=null; }, [machine,path]);
-  const MoreButton = faceToggle ? GlassItem : GlassCircle;
+  const MoreButton = faceToggle || readingTools ? GlassItem : GlassCircle;
   const moreMenu: ReactNode = (
     <DropdownMenu onOpenChange={(o) => o && setHasSymbols(hasSymbolsIn(path))}>
       <DropdownMenuTrigger asChild>
@@ -289,9 +291,10 @@ function useFileVerbs({
       )}
     </>
   );
-  const moreCircle = faceToggle ? (
+  const moreCircle = faceToggle || readingTools ? (
     <GlassCapsule data-file-actions role="group" aria-label={gui.file_actions}>
-      <GlassItem data-file-face-toggle={faceToggle.face} aria-label={faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview} aria-pressed={faceToggle.face === "preview"} on={faceToggle.face === "preview"} onClick={faceToggle.run} tip={!coarse && (faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview)}><IconEye /></GlassItem>
+      {faceToggle && <GlassItem data-file-face-toggle={faceToggle.face} aria-label={faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview} aria-pressed={faceToggle.face === "preview"} on={faceToggle.face === "preview"} onClick={faceToggle.run} tip={!coarse && (faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview)}><IconEye /></GlassItem>}
+      {readingTools}
       {more && moreMenu}
     </GlassCapsule>
   ) : more ? moreMenu : null;
@@ -300,12 +303,12 @@ function useFileVerbs({
 
 /** The Mac's workspace strip carries the same verbs at its right end
     (round UX-3): 分享 and 「…」, beside the tab they are about. */
-export function FileVerbs({ toolbar, ...props }: Omit<Parameters<typeof useFileVerbs>[0], "additionalActions"> & {
-  toolbar?: { leading: ReactNode; actions: readonly FileMenuAction[] };
+export function FileVerbs({ toolbar, ...props }: Omit<Parameters<typeof useFileVerbs>[0], "additionalActions" | "readingTools"> & {
+  toolbar?: { leading: ReactNode; actions: readonly FileMenuAction[]; readingTools?: ReactNode };
 }) {
   const own = useFileHandoff(props.machine, props.path, !props.handoff);
   const handoff = props.handoff ?? own;
-  const v = useFileVerbs({...props,handoff,additionalActions:toolbar?.actions});
+  const v = useFileVerbs({...props,handoff,additionalActions:toolbar?.actions,readingTools:toolbar?.readingTools});
   return (
     <div ref={own.owner} data-file-verbs className="flex flex-none items-center gap-in">
       {toolbar?.leading}
