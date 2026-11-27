@@ -1,43 +1,8 @@
-// 中继 — the 网络 page's second group (docs/MORE.md; 2026-09-28).
-//
-// **Two lists, and they are not the same kind of thing.** 使用中 is
-// every relay the machine actually binds with, the built-in tier
-// included — shown because a screen that lists only what you typed is
-// blank on a fresh machine and says nothing about the relay the
-// connection is really standing on, and shown *as a fact* because a
-// delete button that refuses is worse than no button. 自己的中继 is what
-// the user added here and the only part this group can remove.
-//
-// **Open on arrival, and read on arrival** (2026-09-28). It sat folded
-// under 高级 for a week, mounted only when the fold opened — on the
-// judgment that reading it was 「a machine dialling on behalf of a
-// control nobody opened」. It is not: `relays` reads this store's
-// relay file and the configured tier (`khor_gui_core::relays`), with no
-// network at all, the same kind of read as `about`. And the page it
-// was folded on is two short groups now, one screen with room to spare
-// — so the owner's sketch has it open, and a fold here would hide the
-// one fact (使用中) a person opens this page to check.
-//
-// The group holds no relay state of its own: every write goes through
-// `setRelays` and paints the answer. "Did it take" is never a question
-// this layer answers from memory.
-//
-// **A key is typed once and never shown again** (2026-09-30, docs/NET.md
-// 中继). The add window has a second box for the relay's shared key;
-// after that the page only knows *whether* a relay is keyed (`keyed`,
-// the row's note) — every later write names the relays to keep with no
-// key, and the node keeps the one it stored (`Node::set_relays`).
-//
-// ⚠️ **The one thing here that is not visible in the data:** the list is
-// read when a node opens. The app opens one per call so it sees a change
-// at once, but a running `khor serve` and every standing connection keep
-// the list they started with. That is what `gui.relays_after_restart`
-// is for, and it is not decoration — without it the screen shows a
-// change that took and a network that did not move, with nothing
-// connecting the two.
+// Relay endpoints and their local credentials on the connection settings page.
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchRelays, setPreferredRelay, setRelays, type RelayChoices, type RelayWant } from "@/api";
+import { fetchNetworkSettings, fetchRelays, setPreferredRelay, setRelays, type NetworkSettings, type RelayChoices, type RelayWant } from "@/api";
+import { NetworkPolicySettings } from "./NetworkPolicySettings";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
@@ -60,6 +25,7 @@ const scheme = (url: string) => (url.startsWith("https://") ? gui.relays_scheme_
 /** Mounting is reading: the page is drawn only while it is on screen. */
 export function NetSettings() {
   const [choices, setChoices] = useState<RelayChoices | null>(null);
+  const [network, setNetwork] = useState<NetworkSettings | null>(null);
   /** When the first asking began (`Waiting`, below). */
   const [since] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +38,10 @@ export function NetSettings() {
 
   useEffect(() => {
     let alive = true;
+    fetchNetworkSettings().then(
+      (settings) => { if (alive) setNetwork(settings); },
+      (e: unknown) => { if (alive) setError(e instanceof Error ? e.message : String(e)); },
+    );
     fetchRelays()
       .then((r) => {
         if (alive) setChoices(r);
@@ -90,6 +60,9 @@ export function NetSettings() {
   const write = useCallback(async (next: RelayWant[], onlyMine: boolean, onRefuse: (why: string) => void) => {
     try {
       setChoices(await setRelays(next, onlyMine));
+      void fetchNetworkSettings().then(setNetwork, (e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e));
+      });
       return true;
     } catch (e) {
       onRefuse(String(e instanceof Error ? e.message : e));
@@ -102,7 +75,13 @@ export function NetSettings() {
     setAdding(true);
   };
 
-  return (
+  return <>
+    {network && <NetworkPolicySettings settings={network} onChange={(settings) => {
+      setNetwork(settings);
+      void fetchRelays().then(setChoices).catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e));
+      });
+    }} />}
     <MoreSection name="relays" label={gui.net_relays} mark={{ "data-net-settings": "" }}>
       {error && (
         <div data-relays-error className="text-callout text-destructive">
@@ -116,7 +95,7 @@ export function NetSettings() {
         <>
           {/* 使用中: a fact, one address a line — nothing here can be
               removed, so nothing here offers to. */}
-          <MoreFact name="relays-in-use" label={gui.relays_in_use}>
+          <MoreFact name="relays-in-use" label={gui.net_relays_configured}>
             <span data-relays-in-use className="flex flex-col items-end font-mono">
               {choices.in_use.map((url) => (
                 <span key={url} data-relay-scheme={url.startsWith("https://") ? "https" : "http"}>
@@ -147,6 +126,8 @@ export function NetSettings() {
                 setPreferredRelay(v || null)
                   .then(fetchRelays)
                   .then(setChoices)
+                  .then(fetchNetworkSettings)
+                  .then(setNetwork)
                   .catch((e: unknown) => setError(String(e instanceof Error ? e.message : e)));
               }}
               mark={{ "data-relays-preferred": choices.preferred ?? "" }}
@@ -188,7 +169,7 @@ export function NetSettings() {
               asks for one first** — the node refuses only-mine over an
               empty list (`relays-only-mine-needs-one`), so a switch that
               just sent it would be a press whose one answer is no. */}
-          <SwitchRow
+          {!network?.explicit && <SwitchRow
             name="relays-only-mine"
             label={gui.relays_only_mine}
             hint={<span data-relays-note>{gui.relays_after_restart}</span>}
@@ -202,7 +183,7 @@ export function NetSettings() {
               void write(choices.mine.map(kept), !choices.only_mine, setError);
             }}
             mark={{ "data-relays-only-mine": "" }}
-          />
+          />}
 
           <RelayAddDialog
             open={adding}
@@ -211,12 +192,17 @@ export function NetSettings() {
               setAdding(false);
               setArming(false);
             }}
-            onWritten={setChoices}
+            onWritten={(next) => {
+              setChoices(next);
+              void fetchNetworkSettings().then(setNetwork).catch((e: unknown) => {
+                setError(e instanceof Error ? e.message : String(e));
+              });
+            }}
           />
         </>
       )}
     </MoreSection>
-  );
+  </>;
 }
 
 /**
@@ -248,12 +234,14 @@ export function RelayAddDialog({
   const [saving,setSaving]=useState(false);
   const [typed, setTyped] = useState("");
   const [typedKey, setTypedKey] = useState("");
+  const [qad, setQad] = useState("");
   const [refused, setRefused] = useState<string | null>(null);
   const [was, setWas] = useState<RelayChoices | null>(null);
   useEffect(() => {
     if (!open) return;
     setTyped("");
     setTypedKey("");
+    setQad("");
     setRefused(null);
     let alive = true;
     fetchRelays().then(
@@ -288,7 +276,7 @@ export function RelayAddDialog({
             const mine = was?.mine ?? [];
             setSaving(true);
             try {
-              const next = await setRelays([...mine.filter((u) => u !== url).map(kept), { url, token }], arming || (was?.only_mine ?? false));
+              const next = await setRelays([...mine.filter((u) => u !== url).map(kept), { url, token, qad: qad ? Number(qad) : undefined }], arming || (was?.only_mine ?? false));
               onWritten?.(next);
               onClose();
             } catch (err) {
@@ -319,13 +307,23 @@ export function RelayAddDialog({
             onChange={(e) => setTypedKey(e.target.value)}
             className="min-h-touch w-full font-mono"
           />
+          <Input
+            type="number"
+            min={1}
+            max={65535}
+            aria-label={gui.net_qad_port}
+            placeholder={gui.net_qad_port}
+            value={qad}
+            onChange={(e) => setQad(e.target.value)}
+            className="min-h-touch w-full font-mono"
+          />
         </form>
         {refused && (
           <p data-relays-refused className="text-callout text-destructive">
             {refused}
           </p>
         )}
-        <TaskActions busy={saving} dirty={!!(typed || typedKey)} cancel={<Button onClick={onClose}>{gui.delete_keep}</Button>} primary={<Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
+        <TaskActions busy={saving} dirty={!!(typed || typedKey || qad)} cancel={<Button onClick={onClose}>{gui.delete_keep}</Button>} primary={<Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
             {gui.watch_add}
           </Button>}/>
       </TaskOverlay>

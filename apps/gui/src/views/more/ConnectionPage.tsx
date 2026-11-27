@@ -43,13 +43,8 @@ export function ConnectionPage({
           {error}
         </p>
       )}
-      {/* 中继 and 首选中继 (and 只使用自己的中继): see `NetSettings` for
-          why it is read on arrival. */}
       <NetSettings />
-      {/* 通过 SSH 转连 and 通过其他机器转发 (`khor config`'s
-          `connection` section, rounds ROAD-2 and ROAD-3): drawn from the
-          node's own rows like every other page's settings. */}
-      <ConfigSections page="connection" onChanged={onChanged} />
+      <ConfigSections page="connection" omit={["peer-hop"]} onChanged={onChanged} />
       {!alone && about && (
         <MoreSection name="sync">
           {/* 暂停同步: **a switch** — one state, taken at once, undone by the

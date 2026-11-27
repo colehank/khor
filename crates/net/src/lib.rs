@@ -3,6 +3,7 @@
 //! they are built.
 
 pub mod carry;
+pub mod configuration;
 pub mod endpoint;
 pub mod identity;
 pub mod path;

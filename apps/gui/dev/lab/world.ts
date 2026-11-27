@@ -21,6 +21,17 @@ const native = generated as {machine_ids:string[];avatars:Record<string,Avatar>;
 // Rust emits a JSON number on the wire; generated u64 bindings name bigint.
 export const labAbout:Omit<About,'store_bytes'> & {store_bytes:number} = {version:'0.0.0-lab',root:'/preview/.khor',paused:false,store_bytes:0,faces:[]};
 export const labRelays:RelayChoices = {mine:[],keyed:[],in_use:[],only_mine:false,preferred:null};
+export const labNetwork: import("../../src/api").NetworkSettings = {
+  profile: {
+    version: 1, relays: [], preferred: null,
+    policy: {
+      khor_relays: true, n0_relays: true, khor_lookup: true, n0_lookup: true,
+      n0_publish: true, mdns: true, peer_relay: true, advertised_relays: true,
+      publish_direct: false, public_dns_fallback: true, pkarr: [], dns_origins: [],
+    },
+  },
+  source: null, explicit: false, invalid: false, resident: true, pending_restart: false,
+};
 export const labRoadShare:RoadShare = {direct:0,settled:0,unread:'no-serve'};
 export const labDoctor:DoctorRow[] = [{key:'lab',name:'预览环境',state:'unmeasured',said:'此预览不检查真实机器',group:'lab',group_label:'预览环境',fix:null}];
 export const labSettings = native.settings;

@@ -1223,6 +1223,8 @@ pub(crate) struct Config {
     /// Per-relay configuration. Consulted when starting a connection to
     /// look up the auth token and any future per-relay options.
     pub relay_map: RelayMap,
+    pub configured_relays_only: bool,
+    pub excluded_relay_hosts: Vec<String>,
 }
 
 /// Connection state of the home relay.
@@ -1499,6 +1501,20 @@ impl RelayActor {
         item: RelaySendItem,
     ) -> Option<impl Future<Output = ()> + use<>> {
         let url = item.url.clone();
+        if !self.config.relay_map.contains(&url)
+            && (self.config.configured_relays_only
+                || url.host_str().is_some_and(|host| {
+                    let host = host.trim_end_matches('.');
+                    self.config.excluded_relay_hosts.iter().any(|excluded| {
+                        excluded
+                            .strip_prefix('*')
+                            .map_or_else(|| host == excluded, |suffix| host.ends_with(suffix))
+                    })
+                }))
+        {
+            trace!(?url, "Relay denied by endpoint policy");
+            return None;
+        }
         let handle = self
             .active_relay_handle_for_endpoint(&item.url, &item.remote_endpoint)
             .await;
@@ -1848,6 +1864,8 @@ mod tests {
                 .expect("infallible"),
             metrics: Default::default(),
             relay_map: RelayMap::empty(),
+            configured_relays_only: false,
+            excluded_relay_hosts: Vec::new(),
         };
         let mut actor =
             RelayActor::new(config, relay_datagram_recv_queue, CancellationToken::new());
@@ -2020,6 +2038,8 @@ mod tests {
                 .expect("infallible"),
             metrics: Default::default(),
             relay_map: RelayMap::empty(),
+            configured_relays_only: false,
+            excluded_relay_hosts: Vec::new(),
         };
         let actor = RelayActor::new(config, datagram_recv_tx, CancellationToken::new());
         let (msg_tx, msg_rx) = mpsc::channel(128);

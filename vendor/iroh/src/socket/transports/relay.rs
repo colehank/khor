@@ -454,6 +454,8 @@ mod tests {
                 .expect("infallible"),
             metrics: Default::default(),
             relay_map: RelayMap::empty(),
+            configured_relays_only: false,
+            excluded_relay_hosts: Vec::new(),
         };
         let mut transport = RelayTransport::new(config, CancellationToken::new());
         let (sender, receiver) = mpsc::channel(16);

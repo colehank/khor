@@ -1137,6 +1137,42 @@ export const restyle = (
     shape?: string;
   },
 ) => call<null>("restyle", { machine, ...change });
+export type NetworkPolicy = {
+  khor_relays: boolean;
+  n0_relays: boolean;
+  khor_lookup: boolean;
+  n0_lookup: boolean;
+  n0_publish: boolean;
+  mdns: boolean;
+  peer_relay: boolean;
+  advertised_relays: boolean;
+  publish_direct: boolean;
+  public_dns_fallback: boolean;
+  pkarr: string[];
+  dns_origins: string[];
+};
+
+export type NetworkSettings = {
+  profile: {
+    version: number;
+    policy: NetworkPolicy;
+    relays: { url: string; qad: number | null }[];
+    preferred: string | null;
+  };
+  source: { url: string; public_key: string; revision: number } | null;
+  explicit: boolean;
+  invalid: boolean;
+  resident: boolean;
+  pending_restart: boolean;
+};
+
+export const fetchNetworkSettings = () => call<NetworkSettings>("network_settings");
+export const setNetworkPolicy = (policy: NetworkPolicy) =>
+  call<NetworkSettings>("set_network_policy", { policy });
+export const importNetworkProfile = (input: string, key: string | null) =>
+  call<NetworkSettings>("import_network_profile", { input, key });
+export const refreshNetworkProfile = () => call<NetworkSettings>("refresh_network_profile");
+
 /** This machine's relays, both halves: `mine` is what the user typed
     here and the only part a control can remove, `in_use` is everything
     the machine actually binds with (the Khor tier included). `keyed`

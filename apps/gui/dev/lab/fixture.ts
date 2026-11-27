@@ -7,7 +7,7 @@ import {navigationFixture,FixtureRefusal} from './navigation';
 import {officeFixturePreview,officeFixtures} from './office-fixtures';
 import type {AppUpdateStatus} from '../../src/gen/bindings/AppUpdateStatus';
 import {pairingFixture} from './pairing';
-import {labSessionAttention,labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRelays,labRoadShare,labDoctor} from './world';
+import {labSessionAttention,labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRelays,labNetwork,labRoadShare,labDoctor} from './world';
 import {canonicalChatFixture} from '../../scripts/fixtures/canonical-chat-routes.mjs';
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import type {SessionRow} from '../../src/gen/bindings/SessionRow';
@@ -543,6 +543,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case 'app_update_companions': answer=appUpdate;break;
           case 'app_update_install': throw new FixtureRefusal('Lab does not install applications');
           case "relays": answer=labRelays;break;
+          case "network_settings": answer=labNetwork;break;
           case "road_share": answer=labRoadShare;break;
           case "doctor": answer=labDoctor;break;
           case "config": answer = settingsRows(); break;

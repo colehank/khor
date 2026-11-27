@@ -127,6 +127,11 @@ pub struct NetReportConfig {
     /// answers is kept before latency alone may move it. Zero is
     /// upstream's: any report may move it.
     pub home_dwell: Duration,
+    /// Allow relay connections only to URLs in the configured map.
+    pub configured_relays_only: bool,
+    /// Ignore learned relay URLs on these hosts unless explicitly configured.
+    /// Entries beginning with `*.` match subdomains of that suffix.
+    pub excluded_relay_hosts: Vec<String>,
 }
 
 impl NetReportConfig {
@@ -139,6 +144,8 @@ impl NetReportConfig {
             successors: Vec::new(),
             fallback: Vec::new(),
             home_dwell: Duration::ZERO,
+            configured_relays_only: false,
+            excluded_relay_hosts: Vec::new(),
         }
     }
 }
@@ -152,6 +159,8 @@ impl Default for NetReportConfig {
             successors: Vec::new(),
             fallback: Vec::new(),
             home_dwell: Duration::ZERO,
+            configured_relays_only: false,
+            excluded_relay_hosts: Vec::new(),
         }
     }
 }
