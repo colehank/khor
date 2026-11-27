@@ -57,15 +57,15 @@ export function networkDetailTitle(detail: NetworkDetail) {
 }
 
 export function NetworkPolicySettings({
-  settings, onChange, detail, onOpenDetail, relayPaths, relayRows, advancedRows,
+  settings, onChange, detail, onOpenDetail, renderRelays, relayBusy, advancedRows,
 }: {
   settings: NetworkSettings;
   detail: NetworkDetail | null;
   onOpenDetail: (detail: NetworkDetail) => void;
-  relayPaths: ReactNode;
-  relayRows: ReactNode;
+  renderRelays: (sources: ReactNode, busy: boolean) => ReactNode;
+  relayBusy: boolean;
   advancedRows: ReactNode;
-  onChange: (settings: NetworkSettings) => void;
+  onChange: (settings: NetworkSettings) => Promise<void>;
 }) {
   const { profile, source } = settings;
   const { policy } = profile;
@@ -88,7 +88,7 @@ export function NetworkPolicySettings({
     setBusy(true);
     setError(null);
     try {
-      onChange(await request());
+      await onChange(await request());
       if (close) setForm(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -134,20 +134,18 @@ export function NetworkPolicySettings({
     (policy.pkarr.length > 0 || policy.dns_origins.length > 0) && gui.net_summary_custom_services,
     policy.mdns && gui.net_summary_local,
   ].filter(Boolean).join(" · ") || gui.net_summary_no_sources;
-  const showDetailStatus = detail === "relays" || detail === "addressing";
-
   return <>
     {settings.invalid && <p role="alert" className="text-callout text-destructive">{gui.net_profile_invalid}</p>}
     {error && !form && <p role="alert" className="text-callout text-destructive">{error}</p>}
-    {showDetailStatus && <MoreSection name="network-detail-status">
+    {detail === "addressing" && <MoreSection name="network-detail-status">
       <MoreFact name="network-config-state" label={gui.net_detail_config_status}>
         <span role="status">{status}</span>
       </MoreFact>
       <MoreFact name="network-config-sources" label={gui.net_detail_config_sources}>
-        {detail === "relays" ? relaySummary : addressingSummary}
+        {addressingSummary}
       </MoreFact>
     </MoreSection>}
-    {detail && !showDetailStatus && settings.pending_restart && <p role="status" className="px-row text-callout text-muted-foreground">{status}</p>}
+    {(detail === "profile" || detail === "advanced") && settings.pending_restart && <p role="status" className="px-row text-callout text-muted-foreground">{status}</p>}
     {!detail && <>
       <MoreSection name="network-configuration">
         <PopupRow
@@ -178,15 +176,13 @@ export function NetworkPolicySettings({
       </MoreSection>
     </>}
     {detail === "relays" && <>
-      {relayPaths}
-      <MoreSection name="network-public-infrastructure" label={gui.net_summary_public_infrastructure}>
-        {toggle("khor_relays", gui.net_relay_khor)}
-        {toggle("n0_relays", gui.net_relay_n0)}
-      </MoreSection>
-      <MoreSection name="relays" mark={{ "data-net-settings": "" }}>
-        {toggle("advertised_relays", gui.net_relay_advertised, gui.net_relay_advertised_note)}
-        {toggle("peer_relay", gui.net_relay_peers, gui.net_relay_peers_note, !policy.advertised_relays)}
-        {relayRows}
+      {renderRelays(<>
+        {toggle("khor_relays", gui.net_relay_khor, undefined, relayBusy)}
+        {toggle("n0_relays", gui.net_relay_n0, undefined, relayBusy)}
+      </>, busy)}
+      <MoreSection name="relays" label={gui.net_relay_forwarding} mark={{ "data-net-settings": "" }}>
+        {toggle("advertised_relays", gui.net_relay_advertised, gui.net_relay_advertised_note, relayBusy)}
+        {toggle("peer_relay", gui.net_relay_peers, gui.net_relay_peers_note, relayBusy || !policy.advertised_relays)}
       </MoreSection>
     </>}
     {detail === "addressing" && <>

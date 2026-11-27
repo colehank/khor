@@ -12788,7 +12788,8 @@ ${serverLog}`);
         continue;
       }
       await press(relayEntry);
-      await until(3_000, async () => (await page.locator('[data-more-section="relay-paths"] [data-relay-path="configured"]').count()) > 0);
+      const poolTrigger = page.locator("[data-relay-pool-trigger]");
+      await poolTrigger.waitFor();
       const net = await page.evaluate(() => {
         const el = document.querySelector('[data-more-page="connection"]');
         if (!el) return null;
@@ -12806,14 +12807,10 @@ ${serverLog}`);
           inBody: body ? body.querySelectorAll("[data-new-item]").length : null,
           pause: el.querySelectorAll('[data-net-pause][role="switch"]').length,
           leave: el.querySelectorAll("[data-net-leave]").length,
-          fold: el.querySelectorAll("[data-more-fold]").length,
-          paths: el.querySelectorAll('[data-more-section="relay-paths"] [data-relay-path="configured"]').length,
           relayAuto: el.querySelector('[data-relay-selection] [data-segment="auto"]')?.getAttribute("aria-checked") === "true",
           relayPickTargets: el.querySelectorAll("[data-relay-pick]").length,
-          mine: el.querySelectorAll("[data-relay-mine]").length,
-          add: el.querySelectorAll("[data-relay-add]").length,
-          sources: el.querySelectorAll('[data-more-section="network-public-infrastructure"] [data-setting-row-name="khor_relays"], [data-more-section="network-public-infrastructure"] [data-setting-row-name="n0_relays"]').length,
-          status: el.querySelector('[data-more-section="network-detail-status"] [data-more-fact="network-config-state"]')?.textContent?.trim(),
+          current: el.querySelectorAll("[data-relay-current]").length,
+          poolClosed: el.querySelector("[data-relay-pool-trigger]")?.getAttribute("aria-expanded") === "false",
         };
       });
       if (net) Object.assign(net, status);
@@ -12839,14 +12836,25 @@ ${serverLog}`);
         if (!net.me || !net.me.includes("gate") || !net.connected) {
           fail(`${posture}: 状态 reads 本机 ${JSON.stringify(net.me)} / 已连接的机器 ${JSON.stringify(net.connected)} — both are facts khor holds`);
         }
-        if (net.fold !== 0 || net.paths === 0 || net.mine === 0 || net.add !== 1 || net.sources !== 2 || !net.status) {
-          fail(`${posture}: 中继 should show configuration status, both public sources, configured URLs and the add action: ${JSON.stringify(net)}`);
-        }
-        if (!net.relayAuto || net.relayPickTargets !== 0) {
-          fail(`${posture}: 中继 should default to automatic selection with read-only paths`);
+        if (!net.relayAuto || net.relayPickTargets !== 0 || net.current !== 1 || !net.poolClosed) {
+          fail(`${posture}: 中继 should show current paths and keep the pool collapsed in automatic mode: ${JSON.stringify(net)}`);
         }
         if (relaysAsked.length === relaysBefore) {
           fail(`${posture}: the 网络 page drew 中继 without asking for the relays — what it shows is not the node's answer`);
+        }
+
+        // The pool opens for manual selection or for managing public sources and private relays in automatic mode.
+        await press('[data-relay-selection] [data-segment="manual"]');
+        if ((await page.locator("[data-relay-pool] [data-relay-pick]").count()) === 0) {
+          fail(`${posture}: manual selection should open the pool with selectable candidates`);
+        }
+        await press('[data-relay-selection] [data-segment="auto"]');
+        await poolTrigger.click();
+        const relayPool = page.locator("[data-relay-pool]");
+        if ((await relayPool.locator('[data-setting-row-name="khor_relays"], [data-setting-row-name="n0_relays"]').count()) !== 2
+          || (await relayPool.locator("[data-relay-mine]").count()) === 0
+          || (await relayPool.locator("[data-relay-add]").count()) !== 1) {
+          fail(`${posture}: opening the pool should show public sources and private relay management`);
         }
 
         // 中继, a round trip: add one through its window, then remove it.

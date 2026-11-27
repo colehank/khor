@@ -4,8 +4,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { fetchNetworkSettings, fetchRelays, setPreferredRelay, setRelays, type DeviceRow, type NetworkSettings, type RelayChoices, type RelayWant } from "@/api";
 import { NetworkPolicySettings, type NetworkDetail } from "./NetworkPolicySettings";
 import { ActionRow } from "@/components/settings/ActionRow";
-import { IconCheck } from "@/components/icons";
+import { SectionHeading } from "@/components/settings/SectionHeading";
+import { IconCheck, IconChevronRight } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -26,12 +28,15 @@ function relayAddress(url: string) {
 
 const relayKey = (url: string) => relayAddress(url)?.href ?? url;
 
-function RelayPaths({ choices, devices, settings, busy, onPick, onRemove }: {
+function RelayPaths({ choices, devices, settings, manual, busy, sources, addRelay, onPick, onRemove }: {
   choices: RelayChoices;
   devices: DeviceRow[];
   settings: NetworkSettings;
+  manual: boolean;
   busy: boolean;
-  onPick?: (url: string) => void;
+  sources: ReactNode;
+  addRelay: ReactNode;
+  onPick: (url: string) => void;
   onRemove: (url: string) => void;
 }) {
   // A relay's live reading is host and non-default port. Only a unique
@@ -65,36 +70,71 @@ function RelayPaths({ choices, devices, settings, busy, onPick, onRemove }: {
   }
 
   const preferred = choices.preferred && relayKey(choices.preferred);
-  return <>
-    {[...configured].map(([key, url]) => {
-      const mine = choices.mine.includes(url);
-      const candidate = selectable.get(key);
-      return <RelayPathRow key={url} label={url} kind="configured"
-        source={mine ? gui.net_summary_custom_services : gui.net_relays_configured}
-        active={used.has(url)} plainHttp={url.startsWith("http://")}
-        keyed={choices.keyed.includes(url)} preferred={key === preferred} busy={busy}
-        pick={onPick && candidate ? () => onPick(candidate) : undefined}
-        remove={mine ? () => onRemove(url) : undefined} />;
-    })}
-    {[...otherRelays].map(([host, source]) => (
+  const entries = [...configured];
+  const configuredRow = ([key, url]: [string, string], inPool: boolean) => {
+    const mine = choices.mine.includes(url);
+    const candidate = selectable.get(key);
+    return <RelayPathRow key={url} label={url} kind="configured"
+      source={mine ? gui.net_summary_custom_services : undefined}
+      active={(!inPool || manual) && used.has(url)} compactMark={!inPool}
+      plainHttp={url.startsWith("http://")} keyed={choices.keyed.includes(url)}
+      preferred={inPool && key === preferred} busy={busy}
+      pick={inPool && manual && candidate ? () => onPick(candidate) : undefined}
+      remove={inPool && mine ? () => onRemove(url) : undefined} />;
+  };
+  const current = [
+    ...(manual ? [] : entries.filter(([, url]) => used.has(url)).map((entry) => configuredRow(entry, false))),
+    ...[...otherRelays].map(([host, source]) => (
       <RelayPathRow key={host ?? "unnamed-relay"} label={host ?? gui.net_relay_unknown_server}
-        kind="relay" source={source} active />
-    ))}
-    {[...forwarding].map((via) => (
+        kind="relay" source={source} active compactMark />
+    )),
+    ...[...forwarding].map((via) => (
       <RelayPathRow key={`via:${via ?? ""}`} label={via ?? gui.net_relay_unknown_device}
-        kind="forwarding" source={gui.net_summary_peer} active />
-    ))}
-    {configured.size === 0 && otherRelays.size === 0 && forwarding.size === 0 && (
-      <p className="text-callout text-muted-foreground">{gui.net_detail_no_relay_routes}</p>
-    )}
-  </>;
+        kind="forwarding" source={gui.net_summary_peer} active compactMark />
+    )),
+  ];
+
+  const currentSection = (!manual || current.length > 0) && (
+    <section data-settings-subgroup data-relay-current className="py-in">
+      <SectionHeading className="px-row">{gui.relays_in_use}</SectionHeading>
+      <div data-settings-card>
+        {current.length ? current : <p className="text-callout text-muted-foreground">{gui.net_detail_no_relay_routes}</p>}
+      </div>
+    </section>
+  );
+
+  const pool = (
+    <Collapsible key={manual ? "manual" : "auto"} defaultOpen={manual}
+      data-settings-subgroup data-relay-pool>
+      {manual ? <SectionHeading className="px-row pt-in">{gui.net_relay_pool}</SectionHeading> : (
+        <CollapsibleTrigger type="button" data-relay-pool-trigger
+          className="group flex min-h-touch w-full items-center justify-between gap-row px-row py-in text-left text-body hover:bg-fill focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+          {gui.net_relay_pool}
+          <IconChevronRight className="size-affordance flex-none text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+        </CollapsibleTrigger>
+      )}
+      <CollapsibleContent data-relay-pool-content>
+        <div data-settings-card>
+          <div data-more-section="network-public-infrastructure" data-settings-subgroup className="pt-in">
+            <SectionHeading className="px-row text-muted-foreground">{gui.net_summary_public_infrastructure}</SectionHeading>
+            <div data-settings-card>{sources}</div>
+          </div>
+          {entries.filter(([, url]) => manual || choices.mine.includes(url)).map((entry) => configuredRow(entry, true))}
+          {addRelay}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+
+  return manual ? <>{pool}{currentSection}</> : <>{currentSection}{pool}</>;
 }
 
-function RelayPathRow({ label, kind, source, active, plainHttp, keyed, preferred, busy, pick, remove }: {
+function RelayPathRow({ label, kind, source, active, compactMark, plainHttp, keyed, preferred, busy, pick, remove }: {
   label: string;
   kind: "configured" | "relay" | "forwarding";
-  source: string;
+  source?: string;
   active: boolean;
+  compactMark?: boolean;
   plainHttp?: boolean;
   keyed?: boolean;
   preferred?: boolean;
@@ -103,6 +143,7 @@ function RelayPathRow({ label, kind, source, active, plainHttp, keyed, preferred
   remove?: () => void;
 }) {
   const Row = pick ? "button" : "div";
+  const note = [source, plainHttp && gui.relays_scheme_http, keyed && gui.relays_keyed].filter(Boolean).join(" · ");
   return (
     <div data-more-row data-relay-path={kind} data-relay-active={active}
       data-relay-mine={remove ? label : undefined} className="flex min-w-0 items-center gap-row">
@@ -110,18 +151,14 @@ function RelayPathRow({ label, kind, source, active, plainHttp, keyed, preferred
         {...(pick ? { type: "button" as const, onClick: pick, disabled: busy, "aria-pressed": !!preferred, "data-relay-pick": "" } : {})}>
         <span className="flex min-w-0 flex-1 flex-col">
           <span data-selectable={pick ? undefined : ""} className={`text-body [overflow-wrap:anywhere] ${pick && !preferred && !busy ? "underline-offset-2 group-hover/relay:underline" : ""}`}>{label}</span>
-          <span className="text-callout text-muted-foreground">
-            {source}
-            {plainHttp && <> · {gui.relays_scheme_http}</>}
-            {keyed && <span data-relay-keyed> · {gui.relays_keyed}</span>}
-          </span>
+          {note && <span data-relay-keyed={keyed ? "" : undefined} className="text-callout text-muted-foreground">{note}</span>}
         </span>
         {(active || preferred) && <span data-relay-mark className="flex flex-none items-center gap-xxs text-callout text-foreground">
           <IconCheck className="size-affordance flex-none" />
-          <span className="flex flex-col">
+          {!compactMark && <span className="flex flex-col">
             {active && <span data-relay-path-status>{gui.relays_in_use}</span>}
             {preferred && <span data-relay-preferred>{gui.relays_preferred}</span>}
-          </span>
+          </span>}
         </span>}
       </Row>
       {remove && <Button onClick={remove} disabled={busy} data-setting-trail className="min-h-touch min-w-touch flex-none">{gui.remove}</Button>}
@@ -192,62 +229,65 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
     setReadAttempt((attempt) => attempt + 1);
   };
 
-  const canChoose = !!choices?.in_use.length;
-  const manual = !!choices?.preferred || (choosingPreferred && canChoose);
-  const relayPaths = detail === "relays" && network && (
-    <MoreSection name="relay-paths" label={gui.net_relay_path_list}>
-      {choices ? <>
-        <div className="flex flex-wrap items-center justify-between gap-x-row gap-y-in">
-          <span className="text-body">{gui.net_relay_selection}</span>
-          <SegmentedControl
-            label={gui.net_relay_selection}
-            value={manual ? "manual" : "auto"}
-            options={[
-              { key: "auto", label: gui.automatic, disabled: writingRelay },
-              { key: "manual", label: gui.net_relay_select_manual, disabled: writingRelay || !canChoose },
-            ]}
-            onChange={(mode) => {
-              if (mode === "manual") setChoosingPreferred(true);
-              else if (choices.preferred) pickPreferred(null);
-              else setChoosingPreferred(false);
-            }}
-            mark={{ "data-relay-selection": "" }}
-          />
-          {manual && <p className="w-full text-callout text-muted-foreground">
-            {choices.preferred ? gui.relays_preferred_note : gui.net_relay_pick_prompt}
-          </p>}
-        </div>
-        {error && <p data-relays-error role="alert" className="text-callout text-destructive">{error}</p>}
-        <RelayPaths choices={choices} devices={devices} settings={network} busy={writingRelay}
-          onPick={manual ? pickPreferred : undefined} onRemove={(url) => {
-          void write(async () => {
-            const next = await setRelays(choices.mine.filter((entry) => entry !== url).map(kept), choices.only_mine);
-            setChoices(next);
-            if (!next.in_use.length) setChoosingPreferred(false);
-          });
-        }} />
-        <ActionRow name="relay-add" label={gui.relays_mine} actionLabel={gui.relays_add}
-          onPress={() => setAdding(true)} busy={writingRelay} mark={{ "data-relay-add": "" }} />
-      </> : error ? <RegionState state="error" message={error} onRetry={retry} /> : <Waiting since={since} />}
-    </MoreSection>
-  );
-
-  const relayRows = choices && (
-    <RelayAddDialog
-      open={adding}
-      onClose={() => setAdding(false)}
-      onWritten={(next) => {
-        setChoices(next);
-        void fetchNetworkSettings().then(setNetwork).catch((e: unknown) => {
-          setError(e instanceof Error ? e.message : String(e));
-        });
-      }}
-    />
-  );
-
   if (!network) {
     return error ? <RegionState state="error" message={error} onRetry={retry} /> : <Waiting since={since} />;
   }
+
+  const canChoose = !!choices?.in_use.length;
+  const manual = !!choices?.preferred || (choosingPreferred && canChoose);
+  const renderRelays = (sources: ReactNode, policyBusy: boolean) => {
+    const busy = writingRelay || policyBusy;
+    return <>
+      <MoreSection name="relay-paths">
+        {choices ? <>
+          <div className="flex flex-wrap items-center justify-between gap-x-row gap-y-in">
+            <span className="text-body">{gui.net_relay_selection}</span>
+            <SegmentedControl
+              label={gui.net_relay_selection}
+              value={manual ? "manual" : "auto"}
+              options={[
+                { key: "auto", label: gui.automatic, disabled: busy },
+                { key: "manual", label: gui.net_relay_select_manual, disabled: busy || !canChoose },
+              ]}
+              onChange={(mode) => {
+                if (mode === "manual") setChoosingPreferred(true);
+                else if (choices.preferred) pickPreferred(null);
+                else setChoosingPreferred(false);
+              }}
+              mark={{ "data-relay-selection": "" }}
+            />
+            {manual && <p className="w-full text-callout text-muted-foreground">
+              {choices.preferred ? gui.relays_preferred_note : gui.net_relay_pick_prompt}
+            </p>}
+            {!network.invalid && network.pending_restart && <p role="status" data-relay-config-status className="w-full text-callout text-muted-foreground">
+              {gui.net_profile_restart}
+            </p>}
+          </div>
+          {error && <p data-relays-error role="alert" className="text-callout text-destructive">{error}</p>}
+          <RelayPaths choices={choices} devices={devices} settings={network} manual={manual} busy={busy} sources={sources}
+            addRelay={<ActionRow name="relay-add" label={gui.relays_mine} actionLabel={gui.relays_add}
+              onPress={() => setAdding(true)} busy={busy} mark={{ "data-relay-add": "" }} />}
+            onPick={pickPreferred} onRemove={(url) => {
+              void write(async () => {
+                const next = await setRelays(choices.mine.filter((entry) => entry !== url).map(kept), choices.only_mine);
+                setChoices(next);
+                if (!next.in_use.length) setChoosingPreferred(false);
+              });
+            }} />
+        </> : error ? <RegionState state="error" message={error} onRetry={retry} /> : <Waiting since={since} />}
+      </MoreSection>
+      {choices && adding && <RelayAddDialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        onWritten={(next) => {
+          setChoices(next);
+          void fetchNetworkSettings().then(setNetwork).catch((e: unknown) => {
+            setError(e instanceof Error ? e.message : String(e));
+          });
+        }}
+      />}
+    </>;
+  };
 
   return <NetworkPolicySettings
     settings={network}
@@ -256,14 +296,17 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
       setChoosingPreferred(false);
       onOpenDetail(next);
     }}
-    relayPaths={relayPaths}
-    relayRows={relayRows}
+    renderRelays={renderRelays}
+    relayBusy={writingRelay}
     advancedRows={advancedRows}
-    onChange={(settings) => {
+    onChange={async (settings) => {
       setNetwork(settings);
-      void fetchRelays().then(setChoices).catch((e: unknown) => {
+      setError(null);
+      try {
+        setChoices(await fetchRelays());
+      } catch (e: unknown) {
         setError(e instanceof Error ? e.message : String(e));
-      });
+      }
     }}
   />;
 }
