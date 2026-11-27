@@ -75,14 +75,8 @@ export function NetSettings() {
     setAdding(true);
   };
 
-  return <>
-    {network && <NetworkPolicySettings settings={network} onChange={(settings) => {
-      setNetwork(settings);
-      void fetchRelays().then(setChoices).catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
-      });
-    }} />}
-    <MoreSection name="relays" label={gui.net_relays} mark={{ "data-net-settings": "" }}>
+  const relayRows = (
+    <>
       {error && (
         <div data-relays-error className="text-callout text-destructive">
           {error}
@@ -95,7 +89,7 @@ export function NetSettings() {
         <>
           {/* 使用中: a fact, one address a line — nothing here can be
               removed, so nothing here offers to. */}
-          <MoreFact name="relays-in-use" label={gui.net_relays_configured}>
+          {choices.in_use.length > 0 && <MoreFact name="relays-in-use" label={gui.net_relays_configured}>
             <span data-relays-in-use className="flex flex-col items-end font-mono">
               {choices.in_use.map((url) => (
                 <span key={url} data-relay-scheme={url.startsWith("https://") ? "https" : "http"}>
@@ -104,7 +98,7 @@ export function NetSettings() {
                 </span>
               ))}
             </span>
-          </MoreFact>
+          </MoreFact>}
 
           {/* 首选中继 (round NET-2): which of the relays in use this
               machine homes on whenever it is reachable — 自动 is iroh's
@@ -201,8 +195,25 @@ export function NetSettings() {
           />
         </>
       )}
-    </MoreSection>
-  </>;
+    </>
+  );
+
+  if (!network) {
+    return <MoreSection name="relays" label={gui.net_relays} mark={{ "data-net-settings": "" }}>
+      {relayRows}
+    </MoreSection>;
+  }
+
+  return <NetworkPolicySettings
+    settings={network}
+    relayRows={relayRows}
+    onChange={(settings) => {
+      setNetwork(settings);
+      void fetchRelays().then(setChoices).catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e));
+      });
+    }}
+  />;
 }
 
 /**

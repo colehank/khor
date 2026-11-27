@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import {
   importNetworkProfile, refreshNetworkProfile, setNetworkPolicy,
@@ -45,9 +45,10 @@ function matches(policy: NetworkPolicy, preset: typeof automatic) {
 }
 
 export function NetworkPolicySettings({
-  settings, onChange,
+  settings, onChange, relayRows,
 }: {
   settings: NetworkSettings;
+  relayRows: ReactNode;
   onChange: (settings: NetworkSettings) => void;
 }) {
   const { profile, source } = settings;
@@ -134,10 +135,11 @@ export function NetworkPolicySettings({
         hint={<span className="break-all">{source.url}</span>} actionLabel={gui.net_profile_refresh}
         onPress={() => void run(refreshNetworkProfile)} />}
     </MoreSection>
-    <MoreSection name="network-relay-providers" label={gui.net_relay_providers}>
+    <MoreSection name="relays" label={gui.net_relays} mark={{ "data-net-settings": "" }}>
       {toggle("khor_relays", gui.net_relay_khor)}
       {toggle("n0_relays", gui.net_relay_n0)}
       {toggle("advertised_relays", gui.net_relay_advertised, gui.net_relay_advertised_note)}
+      {relayRows}
     </MoreSection>
     <MoreSection name="network-addressing" label={gui.net_addressing}>
       {toggle("khor_lookup", gui.net_lookup_khor)}
