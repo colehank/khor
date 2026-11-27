@@ -4,7 +4,7 @@ import {noticeFixture} from './notice-fixture';
 import {longHistoryFrames} from './long-history';
 // Data-only fixture for the complete production App; never imported by its normal entry.
 import {navigationFixture,FixtureRefusal} from './navigation';
-import {officeFixturePreview,officeFixtures} from './office-fixtures';
+import {officeFixturePreview,officeFixtures,visualFixturePreview,visualFixtures} from './preview-fixtures';
 import type {AppUpdateStatus} from '../../src/gen/bindings/AppUpdateStatus';
 import {pairingFixture} from './pairing';
 import {labSessionAttention,labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRelays,labRoadShare,labDoctor} from './world';
@@ -396,6 +396,8 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       if(path==='preview' && typeof document!=='undefined'){
         const file=officeFixtures.find(file=>String(body.path).endsWith('/'+file));
         if(file)return officeFixturePreview(file,body.officeBytes===true);
+        const visual=visualFixtures.find(file=>String(body.path).endsWith('/'+file));
+        if(visual)return visualFixturePreview(visual);
       }
       if (navigation.handles(path)) return structuredClone(navigation.request(path, body));
       if (path === 'face_note') return null;

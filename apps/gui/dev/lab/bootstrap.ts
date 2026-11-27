@@ -3,7 +3,7 @@ import {createLabFixture} from './fixture';
 import {scenes, sessionIds, independentKhorSession, type Scene} from './scenes';
 import {configureLabBackend} from './backend-context';
 import {FixtureRefusal} from './navigation';
-import {officeFixtures} from './office-fixtures';
+import {officeFixtures,visualFixtures} from './preview-fixtures';
 import {readPreview} from './preview-state';
 
 type Runtime = {mode: 'frontend'|'full'; scene: Scene; tree: string; revision: string};
@@ -160,7 +160,7 @@ if (runtime.mode === 'frontend' && runtime.scene === 'workspace') {
   let opened = false,folderOpened=false;
   const enter = () => {
     const requested=query.get('file');
-    const name=requested&&['media/preview.html','media/clip.mp4','media/audio.wav',...officeFixtures].includes(requested)?requested:'README.md';
+    const name=requested&&['media/preview.html','media/clip.mp4','media/audio.wav',...officeFixtures,...visualFixtures].includes(requested)?requested:'README.md';
     const file = document.querySelector<HTMLElement>('[data-file-path="/preview/project/'+name+'"]');
     const folder=name.includes('/')?document.querySelector<HTMLElement>('[data-file-path="/preview/project/'+name.split('/')[0]+'"]'):null;
     if(!file&&folder&&!folderOpened){folderOpened=true;folder.click();return;}
