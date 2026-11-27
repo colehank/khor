@@ -3176,7 +3176,6 @@ conn-peer-rtt = "往返 {0}"
 conn-peer-failed = "上次出错（{0}）：{1}"
 conn-unanswered = "常驻没有回答"
 relays-preferred = "首选中继"
-relays-preferred-auto = "自动（最近的）"
 relays-preferred-note = "可达时，优先用作本机的中继入口。"
 # 等远端机器回应时的三档（round NET-FIX）：不到 1 秒只有骨架；1 秒起骨架下多一个
 # 转圈；8 秒起说清在等哪台、等了多久，并给「停止等待」「重试」。
@@ -4529,9 +4528,10 @@ net-detail-config-sources = "已选来源"
 net-detail-invalid = "配置无效"
 net-detail-no-relay-routes = "暂无中继路径"
 net-relay-path-list = "中继路径"
-net-relay-idle = "未使用"
-net-relay-unconfirmed = "使用状态待确认"
-net-relay-node-stopped = "网络未运行"
+net-relay-selection = "中继选择"
+net-relay-select-auto = "自动选择"
+net-relay-select-manual = "手动选择"
+net-relay-pick-prompt = "从下方选择一台已配置的中继"
 net-relay-unidentified = "来源待确认"
 net-relay-unknown-server = "未知中继服务器"
 net-relay-unknown-device = "未知转发设备"
@@ -4579,7 +4579,7 @@ relays-after-restart = "新添加的中继在 khor serve 重启后生效"
 # Separate from the list above because nothing here can be removed — a
 # row with a dead delete button and no reason next to it is worse than
 # no row.
-relays-in-use = "使用中"
+relays-in-use = "当前使用"
 # The exclusive switch. It reads as a sentence rather than a label
 # because what it does is not guessable from a noun: 「中继」 alone would
 # leave「加了这台之后原来那些还在不在」unanswered, which is the only
@@ -4594,7 +4594,6 @@ relays-only-mine = "只使用自己的中继"
 relays-key = "中继密钥"
 relays-key-hint = "密钥（没有就留空）"
 relays-keyed = "带密钥"
-relays-scheme-https = "HTTPS"
 relays-scheme-http = "HTTP，明文"
 back = "返回"
 # The narrow session page's foot (2026-10-02, iOS 第三步 A). The switch

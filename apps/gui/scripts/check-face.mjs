@@ -12807,7 +12807,9 @@ ${serverLog}`);
           pause: el.querySelectorAll('[data-net-pause][role="switch"]').length,
           leave: el.querySelectorAll("[data-net-leave]").length,
           fold: el.querySelectorAll("[data-more-fold]").length,
-          paths: el.querySelectorAll('[data-more-section="relay-paths"] [data-relay-path="configured"] [data-relay-path-status]').length,
+          paths: el.querySelectorAll('[data-more-section="relay-paths"] [data-relay-path="configured"]').length,
+          relayAuto: el.querySelector('[data-relay-selection] [data-segment="auto"]')?.getAttribute("aria-checked") === "true",
+          relayPickTargets: el.querySelectorAll("[data-relay-pick]").length,
           mine: el.querySelectorAll("[data-relay-mine]").length,
           add: el.querySelectorAll("[data-relay-add]").length,
           sources: el.querySelectorAll('[data-more-section="network-public-infrastructure"] [data-setting-row-name="khor_relays"], [data-more-section="network-public-infrastructure"] [data-setting-row-name="n0_relays"]').length,
@@ -12839,6 +12841,9 @@ ${serverLog}`);
         }
         if (net.fold !== 0 || net.paths === 0 || net.mine === 0 || net.add !== 1 || net.sources !== 2 || !net.status) {
           fail(`${posture}: 中继 should show configuration status, both public sources, configured URLs and the add action: ${JSON.stringify(net)}`);
+        }
+        if (!net.relayAuto || net.relayPickTargets !== 0) {
+          fail(`${posture}: 中继 should default to automatic selection with read-only paths`);
         }
         if (relaysAsked.length === relaysBefore) {
           fail(`${posture}: the 网络 page drew 中继 without asking for the relays — what it shows is not the node's answer`);
