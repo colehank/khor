@@ -7,8 +7,8 @@
 // Two fingers scale it about its middle (1× to 6×); one finger moves it
 // while it is enlarged; a double tap goes to 2.5× and back. At 1× a single
 // finger is left alone, so whatever scrolls around the picture still does.
-// A transform and nothing else: the picture's box never changes size, and
-// nothing around it moves.
+// With a zoom control, a mouse can move the enlarged picture too. The
+// picture's layout box never changes size, and nothing around it moves.
 import { useEffect, useState, type RefObject } from "react";
 
 const MAX = 6;
@@ -26,6 +26,7 @@ export function usePinch(zoom?: RefObject<((factor: number) => void) | null>): (
     let y = 0;
     let pinch: { d: number; scale: number } | null = null;
     let pan: { px: number; py: number; x: number; y: number } | null = null;
+    let drag: { id: number; x: number; y: number } | null = null;
     let moved = false;
     let lastTap = 0;
     const apply = () => {
@@ -34,12 +35,44 @@ export function usePinch(zoom?: RefObject<((factor: number) => void) | null>): (
         x = 0;
         y = 0;
       }
+      if (zoom) {
+        // Keep the original fitted frame covered as the enlarged image moves.
+        const maxX = el.offsetWidth * (scale - 1) / 2;
+        const maxY = el.offsetHeight * (scale - 1) / 2;
+        x = Math.min(maxX, Math.max(-maxX, x));
+        y = Math.min(maxY, Math.max(-maxY, y));
+        if (scale === 1) delete el.dataset.imagePan;
+        else el.dataset.imagePan = drag ? "dragging" : "ready";
+      }
       el.style.transform = scale === 1 ? "" : `translate(${x}px, ${y}px) scale(${scale})`;
     };
     const gap = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
     if (zoom) zoom.current = factor => {
       scale = Math.min(MAX, Math.max(1, scale * factor));
       apply();
+    };
+    const startDrag = (event: PointerEvent) => {
+      if (event.pointerType !== "mouse" || event.button !== 0 || scale === 1) return;
+      event.preventDefault();
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      el.setPointerCapture(event.pointerId);
+      el.dataset.imagePan = "dragging";
+    };
+    const moveDrag = (event: PointerEvent) => {
+      if (drag?.id !== event.pointerId) return;
+      x += event.clientX - drag.x;
+      y += event.clientY - drag.y;
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+      apply();
+    };
+    const endDrag = (event: PointerEvent) => {
+      if (drag?.id !== event.pointerId) return;
+      drag = null;
+      apply();
+    };
+    const preventNativeDrag = (event: DragEvent) => {
+      if (scale > 1) event.preventDefault();
     };
     const down = (e: TouchEvent) => {
       moved = false;
@@ -84,8 +117,28 @@ export function usePinch(zoom?: RefObject<((factor: number) => void) | null>): (
     el.addEventListener("touchstart", down, { passive: false });
     el.addEventListener("touchmove", move, { passive: false });
     el.addEventListener("touchend", up, { passive: false });
+    const resize = zoom ? new ResizeObserver(apply) : null;
+    if (resize) {
+      resize.observe(el);
+      el.addEventListener("pointerdown", startDrag);
+      el.addEventListener("pointermove", moveDrag);
+      el.addEventListener("pointerup", endDrag);
+      el.addEventListener("pointercancel", endDrag);
+      el.addEventListener("lostpointercapture", endDrag);
+      el.addEventListener("dragstart", preventNativeDrag);
+    }
     return () => {
-      if (zoom) zoom.current = null;
+      if (zoom) {
+        zoom.current = null;
+        resize?.disconnect();
+        el.removeEventListener("pointerdown", startDrag);
+        el.removeEventListener("pointermove", moveDrag);
+        el.removeEventListener("pointerup", endDrag);
+        el.removeEventListener("pointercancel", endDrag);
+        el.removeEventListener("lostpointercapture", endDrag);
+        el.removeEventListener("dragstart", preventNativeDrag);
+        delete el.dataset.imagePan;
+      }
       el.removeEventListener("touchstart", down);
       el.removeEventListener("touchmove", move);
       el.removeEventListener("touchend", up);

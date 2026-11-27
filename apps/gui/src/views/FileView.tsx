@@ -1032,7 +1032,7 @@ function FileBody({
             data-look={look.kind}
             src={`data:${look.media};base64,${look.data}`}
             alt=""
-            className="max-h-full max-w-full object-contain"
+            className="max-h-full max-w-full object-contain data-[image-pan=ready]:cursor-grab data-[image-pan=dragging]:cursor-grabbing"
           />
           {floatingZoom && <PreviewZoom onZoom={step => imageZoom.current?.(step > 0 ? 1.25 : 0.8)}/>}
         </div>
