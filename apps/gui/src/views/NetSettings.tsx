@@ -36,7 +36,7 @@ function RelayPaths({ choices, devices, settings, manual, busy, sources, addRela
   busy: boolean;
   sources: ReactNode;
   addRelay: ReactNode;
-  onPick: (url: string) => void;
+  onPick: (url: string | null) => void;
   onRemove: (url: string) => void;
 }) {
   // A relay's live reading is host and non-default port. Only a unique
@@ -74,12 +74,13 @@ function RelayPaths({ choices, devices, settings, manual, busy, sources, addRela
   const configuredRow = ([key, url]: [string, string], inPool: boolean) => {
     const mine = choices.mine.includes(url);
     const candidate = selectable.get(key);
+    const selected = key === preferred;
     return <RelayPathRow key={url} label={url} kind="configured"
       source={mine ? gui.net_summary_custom_services : undefined}
       active={(!inPool || manual) && used.has(url)} compactMark={!inPool}
       plainHttp={url.startsWith("http://")} keyed={choices.keyed.includes(url)}
-      preferred={inPool && key === preferred} busy={busy}
-      pick={inPool && manual && candidate ? () => onPick(candidate) : undefined}
+      preferred={inPool && selected} busy={busy}
+      pick={inPool && manual && candidate ? () => onPick(selected ? null : candidate) : undefined}
       remove={inPool && mine ? () => onRemove(url) : undefined} />;
   };
   const current = [
@@ -96,13 +97,15 @@ function RelayPaths({ choices, devices, settings, manual, busy, sources, addRela
 
   const currentSection = (!manual || current.length > 0) && (
     <section data-settings-subgroup data-relay-current className="py-in">
-      <SectionHeading className="px-row">{gui.relays_in_use}</SectionHeading>
+      <SectionHeading className="px-row">{manual ? gui.net_relay_other_active : gui.relays_in_use}</SectionHeading>
       <div data-settings-card>
         {current.length ? current : <p className="text-callout text-muted-foreground">{gui.net_detail_no_relay_routes}</p>}
       </div>
     </section>
   );
 
+  const candidates = entries.filter(([key]) => selectable.has(key));
+  const managed = entries.filter(([key, url]) => choices.mine.includes(url) && (!manual || !selectable.has(key)));
   const pool = (
     <Collapsible key={manual ? "manual" : "auto"} defaultOpen={manual}
       data-settings-subgroup data-relay-pool>
@@ -115,11 +118,17 @@ function RelayPaths({ choices, devices, settings, manual, busy, sources, addRela
       )}
       <CollapsibleContent data-relay-pool-content>
         <div data-settings-card>
+          {manual && candidates.length > 0 && <section data-settings-subgroup data-relay-candidates className="pt-in">
+            <SectionHeading className="px-row text-muted-foreground">{gui.net_relay_candidates}</SectionHeading>
+            <div data-settings-card>
+              {candidates.map((entry) => configuredRow(entry, true))}
+            </div>
+          </section>}
           <div data-more-section="network-public-infrastructure" data-settings-subgroup className="pt-in">
             <SectionHeading className="px-row text-muted-foreground">{gui.net_summary_public_infrastructure}</SectionHeading>
             <div data-settings-card>{sources}</div>
           </div>
-          {entries.filter(([, url]) => manual || choices.mine.includes(url)).map((entry) => configuredRow(entry, true))}
+          {managed.map((entry) => configuredRow(entry, true))}
           {addRelay}
         </div>
       </CollapsibleContent>
@@ -150,14 +159,19 @@ function RelayPathRow({ label, kind, source, active, compactMark, plainHttp, key
       <Row className={`flex min-w-0 flex-1 items-center gap-row text-left ${pick ? "group/relay min-h-touch rounded-sm focus-visible:outline-2 focus-visible:outline-ring" : ""}`}
         {...(pick ? { type: "button" as const, onClick: pick, disabled: busy, "aria-pressed": !!preferred, "data-relay-pick": "" } : {})}>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span data-selectable={pick ? undefined : ""} className={`text-body [overflow-wrap:anywhere] ${pick && !preferred && !busy ? "underline-offset-2 group-hover/relay:underline" : ""}`}>{label}</span>
+          <span data-selectable={pick ? undefined : ""} className="text-body [overflow-wrap:anywhere]">{label}</span>
           {note && <span data-relay-keyed={keyed ? "" : undefined} className="text-callout text-muted-foreground">{note}</span>}
         </span>
-        {(active || preferred) && <span data-relay-mark className="flex flex-none items-center gap-xxs text-callout text-foreground">
-          <IconCheck className="size-affordance flex-none" />
-          {!compactMark && <span className="flex flex-col">
-            {active && <span data-relay-path-status>{gui.relays_in_use}</span>}
-            {preferred && <span data-relay-preferred>{gui.relays_preferred}</span>}
+        {(active || preferred || pick) && <span className="flex flex-none flex-col items-end gap-xxs text-callout">
+          {(active || preferred) && <span data-relay-mark className="flex items-center gap-xxs text-foreground">
+            <IconCheck className="size-affordance flex-none" />
+            {!compactMark && <span className="flex flex-col">
+              {active && <span data-relay-path-status>{gui.relays_in_use}</span>}
+              {preferred && <span data-relay-preferred>{gui.relays_preferred}</span>}
+            </span>}
+          </span>}
+          {pick && <span data-relay-pick-action className={`underline decoration-border underline-offset-2 ${busy ? "text-muted-foreground" : "text-foreground group-hover/relay:decoration-current"}`}>
+            {preferred ? gui.net_relay_clear_preferred : gui.net_relay_set_preferred}
           </span>}
         </span>}
       </Row>
@@ -256,8 +270,8 @@ export function NetSettings({ detail, onOpenDetail, devices, advancedRows }: {
               }}
               mark={{ "data-relay-selection": "" }}
             />
-            {manual && <p className="w-full text-callout text-muted-foreground">
-              {choices.preferred ? gui.relays_preferred_note : gui.net_relay_pick_prompt}
+            {manual && choices.preferred && <p className="w-full text-callout text-muted-foreground">
+              {gui.relays_preferred_note}
             </p>}
             {!network.invalid && network.pending_restart && <p role="status" data-relay-config-status className="w-full text-callout text-muted-foreground">
               {gui.net_profile_restart}
