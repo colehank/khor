@@ -12845,8 +12845,8 @@ ${serverLog}`);
 
         // The pool opens for manual selection or for managing public sources and private relays in automatic mode.
         await press('[data-relay-selection] [data-segment="manual"]');
-        if ((await page.locator("[data-relay-candidates] [data-relay-pick] [data-relay-pick-action]").count()) === 0) {
-          fail(`${posture}: manual selection should open the pool with visible actions on selectable candidates`);
+        if ((await page.locator('[data-relay-candidates] [data-relay-pick] [data-relay-selection-icon="unselected"]').count()) === 0) {
+          fail(`${posture}: manual selection should open the pool with a selection icon on each candidate`);
         }
         await press('[data-relay-selection] [data-segment="auto"]');
         await poolTrigger.click();
