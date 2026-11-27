@@ -5,6 +5,8 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import "pdfjs-dist/web/pdf_viewer.css";
 import { PreviewZoom } from "@/components/PreviewZoom";
 import { RegionState } from "@/components/RegionState";
+import { useCoarse } from "@/hooks/use-coarse";
+import { anchorSurface, bindPreviewPinch, surfaceAt } from "@/lib/preview-pinch";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -15,6 +17,7 @@ export default function PdfZoomLab({ url, fallback }: { url: string; fallback: R
   const viewer = useRef<PDFViewer | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const coarse = useCoarse();
   useEffect(() => {
     const container = port.current, pageList = pages.current;
     if (!container || !pageList) return;
@@ -51,11 +54,25 @@ export default function PdfZoomLab({ url, fallback }: { url: string; fallback: R
       void task.destroy().catch(() => {});
     };
   }, [url]);
+  useEffect(() => {
+    const viewport = port.current, pageList = pages.current, pdf = viewer.current;
+    if (!coarse || !ready || !viewport || !pageList || !pdf) return;
+    return bindPreviewPinch(viewport, origin => {
+      const page = surfaceAt(pageList, ".page", origin);
+      const follow = anchorSurface(viewport, () => page, origin);
+      const initial = pdf.currentScale;
+      if (!follow) return;
+      return (center, factor) => {
+        pdf.updateScale({ scaleFactor: initial * factor / pdf.currentScale, drawingDelay: 90 });
+        follow(center);
+      };
+    });
+  }, [coarse, ready]);
 
   if (failed) return fallback;
   return <div data-pdf-zoom-lab data-band-boundary data-ready={ready || undefined}
     className="relative min-h-0 flex-1 overflow-hidden">
-    <div ref={port} className="absolute inset-0 overflow-auto">
+    <div ref={port} className="absolute inset-0 overflow-auto touch-pan-x touch-pan-y">
       <div ref={pages} className="pdfViewer"/>
     </div>
     {ready ? <PreviewZoom onZoom={steps => viewer.current?.updateScale({ steps })}/> :

@@ -2,6 +2,7 @@ import type { OfficeFormat } from "@/components/OfficePreview";
 import type { OfficeCommentAnchor, OfficeNavigation, OfficePages, OfficeThread, WordReviewEntry, WordReviewPoint, WordReviewSource } from "@/components/office/types";
 import { gui } from "@/gen/catalog";
 import { visiblePageOwner } from "@/lib/native-page-yield";
+import { anchorSurface, surfaceAt, type BeginPreviewPinch, type PreviewPoint } from "@/lib/preview-pinch";
 import type { PptxComment, PptxPresentation } from "@silurus/ooxml/pptx";
 import type { DefinedName } from "@silurus/ooxml/xlsx";
 
@@ -21,6 +22,7 @@ export type OfficeViewer = {
 
 export type OfficeReader = {
   viewer: OfficeViewer;
+  pinch: BeginPreviewPinch;
   pages?: OfficeNavigation;
   comments: () => OfficeThread[];
   wordReview?: WordReviewSource;
@@ -36,6 +38,18 @@ type Callbacks = {
   scale: (scale: number) => void;
   position: (page: OfficePages) => void;
 };
+
+function pinchSurface(viewer: OfficeViewer, viewport: HTMLElement,
+  surface: () => HTMLElement | undefined, origin: PreviewPoint, signal: AbortSignal) {
+  const follow = anchorSurface(viewport, surface, origin);
+  const initial = viewer.getScale();
+  if (!follow) return;
+  return async (center: PreviewPoint, factor: number) => {
+    const scale = initial * factor;
+    if (Math.abs(scale - viewer.getScale()) > 0.001) await viewer.setScale(scale);
+    if (!signal.aborted) follow(center);
+  };
+}
 
 const renderers = () => Promise.all([
   import("@silurus/ooxml/math").then(m => m.math),
@@ -308,6 +322,14 @@ export async function loadOfficeReader(
       };
       return {
         viewer, dispose,
+        pinch: (origin, gesture) => {
+          const page = surfaceAt(host, WORD_PAGE_SURFACE, origin);
+          const viewport = page?.parentElement?.parentElement;
+          if (!page || !viewport) return;
+          const selector = `${WORD_PAGE_SURFACE}[data-page-index="${page.dataset.pageIndex}"]`;
+          return pinchSurface(word, viewport, () => host.querySelector<HTMLElement>(selector) ?? undefined,
+            origin, gesture);
+        },
         pages: {
           page: () => current ?? { index: word.topVisiblePage, count: word.pageCount },
           go: index => {
@@ -383,6 +405,33 @@ export async function loadOfficeReader(
       };
       return {
         viewer: sheets, dispose,
+        pinch: (origin, gesture) => {
+          const viewport = host.querySelector<HTMLElement>("[data-xlsx-viewport-input]");
+          const cell = sheets.getCellAt(origin.x, origin.y);
+          const bounds = cell && sheets.getCellViewportRect(cell);
+          if (!viewport || !cell || !bounds?.width || !bounds.height) return;
+          const canvas = sheets.canvasElement.getBoundingClientRect();
+          const x = (origin.x - canvas.left - bounds.x) / bounds.width;
+          const y = (origin.y - canvas.top - bounds.y) / bounds.height;
+          const initial = sheets.getScale(), sheet = sheets.sheetIndex;
+          let previous = origin;
+          return (center, factor) => {
+            if (gesture.aborted || sheet !== sheets.sheetIndex) return;
+            const oldScale = sheets.getScale();
+            sheets.setScale(initial * factor);
+            let left = previous.x - center.x, top = previous.y - center.y;
+            if (oldScale !== sheets.getScale()) {
+              const rect = sheets.getCellViewportRect(cell);
+              const canvas = sheets.canvasElement.getBoundingClientRect();
+              if (rect) {
+                left = canvas.left + rect.x + x * rect.width - center.x;
+                top = canvas.top + rect.y + y * rect.height - center.y;
+              }
+            }
+            viewport.scrollBy({ left, top, behavior: "instant" });
+            previous = center;
+          };
+        },
         comments: () => {
           const sheet = sheets.sheetIndex;
           return sheets.getComments().map((comment, i) => ({
@@ -412,6 +461,7 @@ export async function loadOfficeReader(
     signal.throwIfAborted();
     return {
       viewer: slides, dispose,
+      pinch: (origin, gesture) => pinchSurface(slides, host, () => canvas, origin, gesture),
       pages: {
         page: () => ({ index: slides.slideIndex, count: slides.slideCount }),
         go: index => slides.goToSlide(index),

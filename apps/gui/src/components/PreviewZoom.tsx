@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef } from "react";
 import { GlassCapsule, GlassItem } from "@/components/Glass";
 import { IconMinus, IconPlus } from "@/components/icons";
 import { gui } from "@/gen/catalog";
+import { useCoarse } from "@/hooks/use-coarse";
 import { groundUnder, inkOver } from "@/lib/deck-fold";
 
 // Use the same adaptive ink for the glass hover fill and the glyph.
@@ -41,8 +42,12 @@ export function floatingZoomLabEnabled(): boolean {
     new URLSearchParams(window.location.search).get("reading-tools") === "top";
 }
 
-/** The preview owns the hover area so invisible controls leave the page interactive. */
 export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
+  return useCoarse() ? null : <HoverZoom onZoom={onZoom}/>;
+}
+
+/** The preview owns the hover area so invisible controls leave the page interactive. */
+function HoverZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
   const area = useRef<HTMLDivElement>(null);
   const ownScope = useRef({});
   const introScope = useContext(PreviewZoomIntroScope) ?? ownScope.current;
@@ -59,14 +64,13 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
       panel.dataset.ink = inkOver(previewGround(lens.getBoundingClientRect(), panel, pixel));
     };
     let hovered = false;
-    let touchShown = false;
     let introTimer = 0;
     const stopIntro = () => {
       window.clearTimeout(introTimer);
       introTimer = 0;
     };
     const updateVisibility = () => {
-      const visible = hovered || touchShown || introTimer !== 0;
+      const visible = hovered || introTimer !== 0;
       if (visible && !panel.hasAttribute("data-shown")) sampleInk();
       panel.toggleAttribute("data-shown", visible);
     };
@@ -75,7 +79,6 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
       const {left, right, top, bottom} = panel.getBoundingClientRect();
       hovered = event.clientX >= left && event.clientX <= right && event.clientY >= top && event.clientY <= bottom;
       if (hovered) stopIntro();
-      touchShown = false;
       updateVisibility();
     };
     const leave = (event: PointerEvent) => {
@@ -92,7 +95,7 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
       presented = visible;
       if (!visible) {
         stopIntro();
-        hovered = touchShown = false;
+        hovered = false;
       } else if (!introduced.has(introScope)) {
         introduced.add(introScope);
         if (!hovered) {
@@ -115,23 +118,6 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
       introObserver.observe(panel);
       document.addEventListener("visibilitychange", syncPresentation);
     }
-    let tap: {id: number; x: number; y: number} | null = null;
-    const down = (event: PointerEvent) => {
-      if (event.pointerType === "touch") tap = event.isPrimary ? {id:event.pointerId,x:event.clientX,y:event.clientY} : null;
-    };
-    const up = (event: PointerEvent) => {
-      if (!tap || tap.id !== event.pointerId) return;
-      const distance = Math.hypot(event.clientX - tap.x, event.clientY - tap.y);
-      tap = null;
-      if (distance > 10 || !preview.contains(event.target as Node) ||
-          (event.target instanceof Element && event.target.closest("[data-preview-zoom],button,a,input"))) return;
-      const selection = window.getSelection();
-      if (selection && !selection.isCollapsed) return;
-      stopIntro();
-      touchShown = !touchShown;
-      updateVisibility();
-    };
-    const cancel = () => { tap = null; };
     let frame = 0;
     const scroll = () => {
       if (frame || !panel.hasAttribute("data-shown")) return;
@@ -140,18 +126,12 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
 
     preview.addEventListener("pointermove", mouse, true);
     preview.addEventListener("pointerleave", leave);
-    preview.addEventListener("pointerdown", down, true);
-    preview.addEventListener("pointerup", up, true);
-    preview.addEventListener("pointercancel", cancel, true);
     preview.addEventListener("scroll", scroll, true);
     panel.addEventListener("focusin", sampleInk);
     panel.addEventListener("click", scroll);
     return () => {
       preview.removeEventListener("pointermove", mouse, true);
       preview.removeEventListener("pointerleave", leave);
-      preview.removeEventListener("pointerdown", down, true);
-      preview.removeEventListener("pointerup", up, true);
-      preview.removeEventListener("pointercancel", cancel, true);
       preview.removeEventListener("scroll", scroll, true);
       panel.removeEventListener("focusin", sampleInk);
       panel.removeEventListener("click", scroll);

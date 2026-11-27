@@ -19,9 +19,11 @@ import { WordReview } from "@/components/office/WordReview";
 import type { OfficeCommentAnchor, OfficePages, OfficeThread } from "@/components/office/types";
 import { loadOfficeReader, type OfficeReader } from "@/components/office/viewer";
 import { gui } from "@/gen/catalog";
+import { useCoarse } from "@/hooks/use-coarse";
 import { assertPageUrl, openSystemUrl } from "@/lib/client-opener";
 import { imeKey } from "@/lib/ime";
 import { visiblePageOwner } from "@/lib/native-page-yield";
+import { bindPreviewPinch } from "@/lib/preview-pinch";
 import { cn } from "@/lib/utils";
 import { useLinkHome } from "@/views/linkHome";
 import docxParser from "@office-parser/docx_parser_bg.wasm?url";
@@ -95,6 +97,7 @@ export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
   const [notice, setNotice] = useState<string | null>(null);
   const home = useLinkHome();
   const floatingZoom = floatingZoomLabEnabled();
+  const coarse = useCoarse();
   const locationSeat = toolbarSeat?.closest('[data-content-toolbar="file"]')
     ?.querySelector<HTMLElement>("[data-content-location-layer]");
 
@@ -225,6 +228,15 @@ export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
     if (command === "actual") run(() => reader.viewer.setScale(1));
     else run(() => reader.viewer[command]());
   }, [reader, run]);
+  useEffect(() => {
+    const host = mount.current;
+    if (!coarse || !floatingZoom || !host || !reader) return;
+    return bindPreviewPinch(host, (origin, signal) => {
+      const update = reader.pinch(origin, signal);
+      if (update) fit.current = null;
+      return update;
+    }, () => setNotice(gui.office_action_failed));
+  }, [coarse, floatingZoom, reader]);
   const changeRevisions = useCallback(() => {
     const revisions = reader?.revisions;
     if (!revisions) return;
