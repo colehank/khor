@@ -244,6 +244,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^5",
+    "pdfjs-dist": "6.5.438",
     "playwright-core": "^1.54",
     "storybook": "10.6.7",
     "tailwindcss": "^4",

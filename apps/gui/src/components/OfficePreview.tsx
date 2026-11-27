@@ -6,6 +6,7 @@ import {
 } from "@/components/icons";
 import { ContentSearch } from "@/components/ContentSearch";
 import { GlassItem } from "@/components/Glass";
+import { PreviewZoom, floatingZoomLabEnabled } from "@/components/PreviewZoom";
 import { RegionState } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,8 +40,7 @@ export function officeFormat(path: string): OfficeFormat | null {
 }
 
 export function officeReadingLabEnabled(path: string): boolean {
-  return officeFormat(path) !== null && "__KHOR_LAB__" in window &&
-    new URLSearchParams(window.location.search).get("reading-tools") === "top";
+  return officeFormat(path) !== null && floatingZoomLabEnabled();
 }
 
 async function documentBytes(source: string | File): Promise<ArrayBuffer> {
@@ -94,6 +94,7 @@ export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
   const [matches, setMatches] = useState<{ index: number; total: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const home = useLinkHome();
+  const floatingZoom = floatingZoomLabEnabled();
   const locationSeat = toolbarSeat?.closest('[data-content-toolbar="file"]')
     ?.querySelector<HTMLElement>("[data-content-location-layer]");
 
@@ -325,7 +326,7 @@ export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
   const tools = reader && <div className={cn("items-center", toolbarSeat ? "hidden @lg/reading:flex" : "flex gap-xxs")}>
         <Tool data-office-find-open aria-label={gui.search_file} aria-pressed={toolbarSeat ? finding : undefined}
           onClick={() => finding ? closeFind() : setFinding(true)}><IconSearch/></Tool>
-        <div role="group" aria-label={gui.office_tool_zoom}
+        {!floatingZoom && <div role="group" aria-label={gui.office_tool_zoom}
           className={cn("flex shrink-0 items-center", !toolbarSeat && "border-s ps-xxs")}>
           {!toolbarSeat && <OfficeTool data-office-zoom-out aria-label={gui.office_zoom_out} onClick={() => zoom("zoomOut")}><IconMinus/></OfficeTool>}
           <DropdownMenu>
@@ -336,7 +337,7 @@ export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
             <DropdownMenuContent align="center">{zoomOptions}</DropdownMenuContent>
           </DropdownMenu>
           {!toolbarSeat && <OfficeTool data-office-zoom-in aria-label={gui.office_zoom_in} onClick={() => zoom("zoomIn")}><IconPlus/></OfficeTool>}
-        </div>
+        </div>}
         <div className="flex shrink-0 items-center border-s ps-xxs">
           {documentTools.map(({key, label, text, Icon, on, id, toggle}) =>
             <Tool key={key} {...{[`data-office-${key}`]: ""}} aria-label={label} aria-pressed={on}
@@ -360,11 +361,13 @@ export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
             <DropdownMenuContent align="end" onCloseAutoFocus={event => { if (finding) event.preventDefault(); }}>
               <DropdownMenuItem data-office-compact-find onSelect={() => setFinding(true)}><IconSearch/>{gui.search_file}</DropdownMenuItem>
               <DropdownMenuSeparator/>
-              <DropdownMenuLabel className="flex items-center gap-row">{gui.office_tool_zoom}
-                <span className="ms-auto tabular-nums text-muted-foreground">{percent}</span>
-              </DropdownMenuLabel>
-              {zoomOptions}
-              <DropdownMenuSeparator/>
+              {!floatingZoom && <>
+                <DropdownMenuLabel className="flex items-center gap-row">{gui.office_tool_zoom}
+                  <span className="ms-auto tabular-nums text-muted-foreground">{percent}</span>
+                </DropdownMenuLabel>
+                {zoomOptions}
+                <DropdownMenuSeparator/>
+              </>}
               {documentTools.map(({key, text, on, toggle}) =>
                 <DropdownMenuCheckboxItem key={key} checked={on} onCheckedChange={toggle}>{text}</DropdownMenuCheckboxItem>
               )}
@@ -397,6 +400,7 @@ export function OfficePreview({ format, source, onFallback, toolbarSeat }: {
               <div ref={mount} className={format === "pptx" ?
                 "absolute inset-0 flex overflow-auto select-text [&>*]:m-auto [&>*]:shrink-0" :
                 "absolute inset-0 overflow-hidden select-text"}/>
+              {reader && floatingZoom && <PreviewZoom onZoom={step => zoom(step > 0 ? "zoomIn" : "zoomOut")}/>}
               {!reader && <div className="absolute inset-0 grid place-items-center bg-background">
                 {lock === "unsupported-encryption" ? <RegionState state="error" message={gui.office_encryption_unsupported}/> :
                   lock ? <form data-office-unlock className="grid w-full max-w-sm gap-row p-page" onSubmit={event => {

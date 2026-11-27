@@ -9,7 +9,7 @@
 // finger is left alone, so whatever scrolls around the picture still does.
 // A transform and nothing else: the picture's box never changes size, and
 // nothing around it moves.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 
 const MAX = 6;
 const TAP_SCALE = 2.5;
@@ -17,7 +17,7 @@ const TAP_SCALE = 2.5;
 const DOUBLE_MS = 300;
 
 /** Hands back the ref callback for the element to zoom. */
-export function usePinch(): (el: HTMLElement | null) => void {
+export function usePinch(zoom?: RefObject<((factor: number) => void) | null>): (el: HTMLElement | null) => void {
   const [el, setEl] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (el === null) return;
@@ -37,6 +37,10 @@ export function usePinch(): (el: HTMLElement | null) => void {
       el.style.transform = scale === 1 ? "" : `translate(${x}px, ${y}px) scale(${scale})`;
     };
     const gap = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    if (zoom) zoom.current = factor => {
+      scale = Math.min(MAX, Math.max(1, scale * factor));
+      apply();
+    };
     const down = (e: TouchEvent) => {
       moved = false;
       if (e.touches.length === 2) {
@@ -81,11 +85,12 @@ export function usePinch(): (el: HTMLElement | null) => void {
     el.addEventListener("touchmove", move, { passive: false });
     el.addEventListener("touchend", up, { passive: false });
     return () => {
+      if (zoom) zoom.current = null;
       el.removeEventListener("touchstart", down);
       el.removeEventListener("touchmove", move);
       el.removeEventListener("touchend", up);
       el.style.transform = "";
     };
-  }, [el]);
+  }, [el, zoom]);
   return setEl;
 }

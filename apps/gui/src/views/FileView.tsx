@@ -31,7 +31,7 @@ import {useDraftCount} from "@/hooks/use-draft-count";
 // broken, which is the failure `check-acp` 第二批 names.
 import { useFileHandoff, type FileHandoffControl } from "@/hooks/use-file-handoff";
 import { FileHandoffAction, FileHandoffStatus } from "@/components/FileHandoff";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fileRefresh } from "@/lib/file-refresh";
 
 import {
@@ -55,6 +55,7 @@ import type { EditorHistorySlot } from "@/lib/code/history";
 import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import {ResourcePreview} from "@/components/ResourcePreview";
 import { OFFICE_PREVIEW_LIMIT, OfficePreview, officeFormat, type OfficeFailure } from "@/components/OfficePreview";
+import { PreviewZoom, floatingZoomLabEnabled } from "@/components/PreviewZoom";
 import { RegionState } from "@/components/RegionState";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
@@ -87,6 +88,8 @@ import { needsOf } from "@/lib/md/blocks";
 import { prepare } from "@/lib/md/extras";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
+
+const PdfZoomLab = lazy(() => import("@/components/PdfZoomLab"));
 
 /** The same table `khor_node::preview::kind` keeps, for the one
     question this view must answer **before** asking anything: which of
@@ -416,7 +419,8 @@ function FileBody({
   const officeFallback = failedOffice?.revision === officeRevision ? failedOffice.reason : null;
   const fallBackOffice = useCallback((reason: OfficeFailure) => setFailedOffice({ revision: officeRevision, reason }), [officeRevision]);
   const inlineOffice = office && !officeFallback ? office : null;
-  const nativePreview = !localFile && kind === "pdf" && handoff.previewSupported;
+  const floatingZoom = floatingZoomLabEnabled();
+  const nativePreview = !floatingZoom && !localFile && kind === "pdf" && handoff.previewSupported;
   const [localUrl,setLocalUrl]=useState<string>();
   useEffect(()=>{if(!localFile)return;const url=URL.createObjectURL(localFile);setLocalUrl(url);return()=>URL.revokeObjectURL(url);},[localFile]);
   const readText=async(m:string,p:string):Promise<FileText>=>localFile?{text:await localFile.slice(0,256*1024).text(),total:localFile.size,at_ms:localFile.lastModified,cut:localFile.size>256*1024,binary:false,digest:""}:fetchFileText(m,p);
@@ -519,7 +523,8 @@ function FileBody({
   // not a checkout is drawn — **nothing** — and the state it was held
   // in is gone with the row that read it.
   /** A picture zooms under two fingers (`usePinch`). */
-  const pinch = usePinch();
+  const imageZoom = useRef<((factor: number) => void) | null>(null);
+  const pinch = usePinch(floatingZoom ? imageZoom : undefined);
   /** Bumped to ask the diff again. **A counter rather than a boolean**:
       two saves in a row have to be two questions, and a flag that was
       already true would answer the second one with the first one's
@@ -561,7 +566,7 @@ function FileBody({
   const previewMode = officeFallback === "too-large" || (officeFallback && localFile) ? null :
     inlineOffice ? (localFile ? null : "preview") :
     kind === "text" || kind === "video" || kind === "audio" ||
-    !localFile && kind === "pdf" && handoff.previewSupported === null
+    !floatingZoom && !localFile && kind === "pdf" && handoff.previewSupported === null
       ? null : nativePreview ? "stat" : "preview";
   useLayoutEffect(() => {
     if (previewMode === null) return;
@@ -1014,7 +1019,7 @@ function FileBody({
       // sanitiser. An image element renders the same drawing and runs
       // nothing — the browser's own rule, not khor's.
       return previewSurface(
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
           <img
             ref={pinch}
             data-look={look.kind}
@@ -1022,6 +1027,7 @@ function FileBody({
             alt=""
             className="max-h-full max-w-full object-contain"
           />
+          {floatingZoom && <PreviewZoom onZoom={step => imageZoom.current?.(step > 0 ? 1.25 : 0.8)}/>}
         </div>
       );
     }
@@ -1031,16 +1037,12 @@ function FileBody({
       // than `<object>`: both reach the same viewer, and a frame is the
       // one of the two whose failure mode is a blank rectangle rather
       // than a silent fallback to nothing.
-      return previewSurface(
-        <div className="flex min-h-0 flex-1 flex-col">
-          <iframe
-            data-pdf-frame
-            src={pdfAt}
-            title={path.split("/").pop() ?? path}
-            className="min-h-0 flex-1 border-0"
-          />
-        </div>
-      );
+      const browserPdf = <iframe data-pdf-frame src={pdfAt}
+        title={path.split("/").pop() ?? path} className="min-h-0 flex-1 border-0"/>;
+      return previewSurface(floatingZoom ?
+        <Suspense fallback={<RegionState state="loading-never"/>}>
+          <PdfZoomLab key={pdfAt} url={pdfAt} fallback={browserPdf}/>
+        </Suspense> : browserPdf);
     }
     if (look.kind === "doc" || look.kind === "pdf") {
       return previewSurface(

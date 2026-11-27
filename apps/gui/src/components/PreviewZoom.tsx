@@ -1,0 +1,165 @@
+import { useEffect, useRef } from "react";
+import { GlassCapsule, GlassItem } from "@/components/Glass";
+import { IconMinus, IconPlus } from "@/components/icons";
+import { gui } from "@/gen/catalog";
+import { groundUnder, inkOver } from "@/lib/deck-fold";
+
+const previewInk = "group-data-[ink=dark]/preview-zoom:text-(--ink-on-light) group-data-[ink=light]/preview-zoom:text-(--ink-on-dark)";
+
+function previewGround(lens: DOMRect, panel: HTMLElement, pixel: CanvasRenderingContext2D | null): string {
+  const x = lens.left + lens.width / 2, y = lens.top + lens.height / 2;
+  const raster = document.elementsFromPoint(x, y).find((element): element is HTMLCanvasElement | HTMLImageElement =>
+    !!panel.parentElement?.contains(element) && (element instanceof HTMLCanvasElement || element instanceof HTMLImageElement));
+  if (raster && pixel) {
+    const box = raster.getBoundingClientRect();
+    const width = raster instanceof HTMLImageElement ? raster.naturalWidth : raster.width;
+    const height = raster instanceof HTMLImageElement ? raster.naturalHeight : raster.height;
+    const left = Math.max(lens.left, box.left), right = Math.min(lens.right, box.right);
+    const top = Math.max(lens.top, box.top), bottom = Math.min(lens.bottom, box.bottom);
+    if (width && height && right > left && bottom > top) {
+      const sx = width / box.width, sy = height / box.height;
+      try {
+        pixel.clearRect(0, 0, 1, 1);
+        pixel.drawImage(raster, (left - box.left) * sx, (top - box.top) * sy, (right - left) * sx, (bottom - top) * sy, 0, 0, 1, 1);
+        const [red, green, blue, alpha] = pixel.getImageData(0, 0, 1, 1).data;
+        if (alpha > 128) return `${red},${green},${blue}`;
+      } catch {
+        pixel.canvas.width = 1;
+      }
+    }
+  }
+  return groundUnder(x, y, panel);
+}
+
+export function floatingZoomLabEnabled(): boolean {
+  return "__KHOR_LAB__" in window &&
+    new URLSearchParams(window.location.search).get("reading-tools") === "top";
+}
+
+/** The preview owns the hover area so invisible controls leave the page interactive. */
+export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
+  const area = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const panel = area.current;
+    const preview = panel?.parentElement;
+    const lens = panel?.firstElementChild;
+    if (!panel || !preview || !lens) return;
+
+    const sampler = document.createElement("canvas");
+    sampler.width = sampler.height = 1;
+    const pixel = sampler.getContext("2d", { willReadFrequently: true });
+    const sampleInk = () => {
+      panel.dataset.ink = inkOver(previewGround(lens.getBoundingClientRect(), panel, pixel));
+    };
+    let hovered = false;
+    let touchShown = false;
+    let introTimer = 0;
+    const stopIntro = () => {
+      window.clearTimeout(introTimer);
+      introTimer = 0;
+    };
+    const updateVisibility = () => {
+      const visible = hovered || touchShown || introTimer !== 0;
+      if (visible && !panel.hasAttribute("data-shown")) sampleInk();
+      panel.toggleAttribute("data-shown", visible);
+    };
+    const mouse = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      const {left, right, top, bottom} = panel.getBoundingClientRect();
+      hovered = event.clientX >= left && event.clientX <= right && event.clientY >= top && event.clientY <= bottom;
+      if (hovered) stopIntro();
+      touchShown = false;
+      updateVisibility();
+    };
+    const leave = (event: PointerEvent) => {
+      if (event.pointerType === "touch") return;
+      hovered = false;
+      updateVisibility();
+    };
+
+    let inView = false;
+    let presented = false;
+    // Session file tabs can stay mounted with display:none when inactive.
+    // Reveal on entry to the visible preview, including a retained tab's return.
+    const syncPresentation = () => {
+      const visible = inView && !document.hidden;
+      if (visible === presented) return;
+      presented = visible;
+      if (!visible) {
+        stopIntro();
+        hovered = touchShown = false;
+      } else if (!hovered) {
+        introTimer = window.setTimeout(() => {
+          introTimer = 0;
+          hovered = lens.matches(":hover");
+          updateVisibility();
+        }, 2000);
+      }
+      updateVisibility();
+    };
+    const introObserver = window.matchMedia("(any-hover: hover)").matches
+      ? new IntersectionObserver(([entry]) => {
+          inView = entry.isIntersecting;
+          syncPresentation();
+        })
+      : null;
+    if (introObserver) {
+      introObserver.observe(panel);
+      document.addEventListener("visibilitychange", syncPresentation);
+    }
+    let tap: {id: number; x: number; y: number} | null = null;
+    const down = (event: PointerEvent) => {
+      if (event.pointerType === "touch") tap = event.isPrimary ? {id:event.pointerId,x:event.clientX,y:event.clientY} : null;
+    };
+    const up = (event: PointerEvent) => {
+      if (!tap || tap.id !== event.pointerId) return;
+      const distance = Math.hypot(event.clientX - tap.x, event.clientY - tap.y);
+      tap = null;
+      if (distance > 10 || !preview.contains(event.target as Node) ||
+          (event.target instanceof Element && event.target.closest("[data-preview-zoom],button,a,input"))) return;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) return;
+      stopIntro();
+      touchShown = !touchShown;
+      updateVisibility();
+    };
+    const cancel = () => { tap = null; };
+    let frame = 0;
+    const scroll = () => {
+      if (frame || !panel.hasAttribute("data-shown")) return;
+      frame = requestAnimationFrame(() => { frame = 0; sampleInk(); });
+    };
+
+    preview.addEventListener("pointermove", mouse, true);
+    preview.addEventListener("pointerleave", leave);
+    preview.addEventListener("pointerdown", down, true);
+    preview.addEventListener("pointerup", up, true);
+    preview.addEventListener("pointercancel", cancel, true);
+    preview.addEventListener("scroll", scroll, true);
+    panel.addEventListener("focusin", sampleInk);
+    panel.addEventListener("click", scroll);
+    return () => {
+      preview.removeEventListener("pointermove", mouse, true);
+      preview.removeEventListener("pointerleave", leave);
+      preview.removeEventListener("pointerdown", down, true);
+      preview.removeEventListener("pointerup", up, true);
+      preview.removeEventListener("pointercancel", cancel, true);
+      preview.removeEventListener("scroll", scroll, true);
+      panel.removeEventListener("focusin", sampleInk);
+      panel.removeEventListener("click", scroll);
+      cancelAnimationFrame(frame);
+      introObserver?.disconnect();
+      if (introObserver) document.removeEventListener("visibilitychange", syncPresentation);
+      stopIntro();
+    };
+  }, []);
+
+  return <div ref={area} data-preview-zoom
+    className="group/preview-zoom pointer-events-none absolute inset-x-0 bottom-row z-20 mx-auto flex w-fit min-w-40 justify-center px-page pt-row pb-row">
+    <GlassCapsule role="group" aria-label={gui.office_tool_zoom}
+      className="[--glass-btn:calc(var(--touch)+2*var(--glass-pad))] [--glass-item-h:var(--touch)] [--glass-item-w:var(--touch)] [--ctl-glyph:var(--icon-rail)] pointer-events-none opacity-0 transition-opacity duration-(--dur-180) group-data-[shown]/preview-zoom:pointer-events-auto group-data-[shown]/preview-zoom:opacity-100 group-data-[shown]/preview-zoom:duration-0 has-[:focus-visible]:opacity-100 has-[:focus-visible]:duration-0 motion-reduce:transition-none">
+      <GlassItem className={previewInk} data-preview-zoom-out aria-label={gui.file_size_down} tip={false} onClick={() => onZoom(-1)}><IconMinus/></GlassItem>
+      <GlassItem className={previewInk} data-preview-zoom-in aria-label={gui.file_size_up} tip={false} onClick={() => onZoom(1)}><IconPlus/></GlassItem>
+    </GlassCapsule>
+  </div>;
+}
