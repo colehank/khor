@@ -38,7 +38,9 @@ export default function PdfPreview({ url, fallback }: { url: string; fallback: R
       if (pdf.currentScaleValue === "page-width") pdf.currentScaleValue = "page-width";
     });
     resize.observe(container);
-    const assets = new URL(import.meta.env.DEV ? "/node_modules/pdfjs-dist/" : "pdf-assets/", document.baseURI);
+    // The worker URL includes the asset origin and the immutable Lab version.
+    const assets = new URL(import.meta.env.DEV ? "/node_modules/pdfjs-dist/" : "pdfjs/",
+      new URL(workerUrl, document.baseURI));
     const task = getDocument({
       url,
       cMapUrl: new URL("cmaps/", assets).href,

@@ -100,7 +100,7 @@ const previewAssets: Plugin = {
       for (const file of readdirSync(new URL(directory + "/", pdf), { withFileTypes: true })) {
         if (!file.isFile()) continue;
         const relative = directory + "/" + file.name;
-        this.emitFile({ type: "asset", fileName: "pdf-assets/" + relative, source: readFileSync(new URL(relative, pdf)) });
+        this.emitFile({ type: "asset", fileName: "assets/pdfjs/" + relative, source: readFileSync(new URL(relative, pdf)) });
       }
     }
   },
