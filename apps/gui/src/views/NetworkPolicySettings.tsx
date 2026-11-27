@@ -127,7 +127,7 @@ export function NetworkPolicySettings({
       {settings.invalid && <p className="px-row py-in text-callout text-destructive">{gui.net_profile_invalid}</p>}
       {error && !form && <p role="alert" className="px-row py-in text-callout text-destructive">{error}</p>}
       <ActionRow name="network-import" label={gui.net_profile_import}
-        actionLabel={gui.net_profile_import_action} onPress={() => open("import")} />
+        actionLabel={gui.net_profile_import} onPress={() => open("import")} />
       <ActionRow name="network-export" label={gui.net_profile_export}
         actionLabel={gui.net_profile_export_action} onPress={() => open("export")} />
       {source && <ActionRow name="network-source" label={gui.net_profile_source}
