@@ -1,6 +1,5 @@
-//! Native session-history availability. A JavaScript history length cannot
-//! distinguish entries behind the current one from entries ahead of it.
-//! Read the engine on its owning thread, never a page-provided estimate.
+//! Native session-history queries and controls. Read the engine on its owning
+//! thread and use engine commands for navigation.
 
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 pub(crate) struct PageSteps {
@@ -62,5 +61,74 @@ pub(crate) fn desktop(view: tauri::webview::PlatformWebview) -> Result<PageSteps
     {
         let _ = view;
         Err("native page history is unavailable on this platform".into())
+    }
+}
+
+#[cfg(all(desktop, not(target_os = "macos")))]
+#[derive(Clone, Copy)]
+pub(crate) enum Direction {
+    Back,
+    Forward,
+}
+
+#[cfg(all(desktop, not(target_os = "macos")))]
+pub(crate) async fn step(view: &tauri::Webview, direction: Direction) -> Result<(), String> {
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        // Tauri's Webview API has no history controls yet. Dispatch to the
+        // native view and carry any engine error back to the caller.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        view.with_webview(move |native| {
+            let _ = tx.send(step_native(native, direction));
+        })
+        .map_err(|error| error.to_string())?;
+        rx.await.map_err(|error| error.to_string())?
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        let script = match direction {
+            Direction::Back => "history.back()",
+            Direction::Forward => "history.forward()",
+        };
+        view.eval(script).map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn step_native(view: tauri::webview::PlatformWebview, direction: Direction) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // SAFETY: with_webview runs this closure on the controller's owning
+        // thread, and the view and its controller are live during the call.
+        unsafe {
+            let core = view
+                .controller()
+                .CoreWebView2()
+                .map_err(|error| error.to_string())?;
+            let mut available = Default::default();
+            match direction {
+                Direction::Back => core.CanGoBack(&mut available),
+                Direction::Forward => core.CanGoForward(&mut available),
+            }
+            .map_err(|error| error.to_string())?;
+            if !available.as_bool() {
+                return Ok(());
+            }
+            match direction {
+                Direction::Back => core.GoBack(),
+                Direction::Forward => core.GoForward(),
+            }
+            .map_err(|error| error.to_string())
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use webkit2gtk::WebViewExt;
+        let native = view.inner();
+        match direction {
+            Direction::Back => native.go_back(),
+            Direction::Forward => native.go_forward(),
+        }
+        Ok(())
     }
 }

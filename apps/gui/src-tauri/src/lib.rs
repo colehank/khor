@@ -1898,6 +1898,14 @@ fn frame_lift(window: &tauri::Window, at: PageBox) -> f64 {
     (told - at.view).max(0.0)
 }
 
+#[cfg(desktop)]
+fn page_bounds(window: &tauri::Window, at: PageBox) -> tauri::Rect {
+    tauri::Rect {
+        position: tauri::LogicalPosition::new(at.x, at.y + frame_lift(window, at)).into(),
+        size: tauri::LogicalSize::new(at.w, at.h).into(),
+    }
+}
+
 /// One thing a page told us about itself, addressed to the tab it belongs
 /// to. The tab id rides along because the face has several and the event
 /// arrives with no other way to tell them apart.
@@ -2105,7 +2113,7 @@ async fn open_page(
     at: PageBox,
     agent: String,
 ) -> Result<khor_gui_core::web::WebBorrow, String> {
-    use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
+    use tauri::{Emitter, Manager, WebviewUrl};
     // **An empty machine means「go direct」** (工作区批5), and the one
     // thing that asks for it is a workspace's VS Code: the URL is
     // already a loopback address of khor's own tunnel, so there is
@@ -2147,7 +2155,7 @@ async fn open_page(
         .transpose()?;
     let label = page_label(&tab);
     let going_to = target.to_string();
-    let top = at.y + frame_lift(&window, at);
+    let bounds = page_bounds(&window, at);
 
     // Reuse only when it is the same exit. A different one means the
     // webview in front of us is wired to a proxy it can no longer be
@@ -2204,10 +2212,7 @@ async fn open_page(
                 page_went(&label, target.as_str());
                 navigate_page(&live, &tab, target).await?;
             }
-            live.set_position(LogicalPosition::new(at.x, top))
-                .map_err(|e| e.to_string())?;
-            live.set_size(LogicalSize::new(at.w, at.h))
-                .map_err(|e| e.to_string())?;
+            live.set_bounds(bounds).map_err(|e| e.to_string())?;
             // Left (or covered) while the borrow dialled: `page_wanted`.
             if page_is_wanted(&tab) {
                 live.show().map_err(|e| e.to_string())?;
@@ -2475,11 +2480,7 @@ async fn open_page(
     });
 
     let made = window
-        .add_child(
-            builder,
-            LogicalPosition::new(at.x, top),
-            LogicalSize::new(at.w, at.h),
-        )
+        .add_child(builder, bounds.position, bounds.size)
         .map_err(|error| {
             #[cfg(not(target_os = "macos"))]
             page_navigation::with_pages(|pages| pages.detach(fallback_key));
@@ -2543,16 +2544,12 @@ fn page_downloads() -> &'static std::sync::Mutex<Vec<(String, std::path::PathBuf
 #[cfg(desktop)]
 #[tauri::command]
 fn move_page(window: tauri::Window, tab: String, at: PageBox) -> Result<(), String> {
-    use tauri::{LogicalPosition, LogicalSize, Manager};
+    use tauri::Manager;
     let Some(view) = window.app_handle().get_webview(&page_label(&tab)) else {
         return Ok(());
     };
-    let top = at.y + frame_lift(&window, at);
-    view.set_position(LogicalPosition::new(at.x, top))
-        .map_err(|e| e.to_string())?;
-    view.set_size(LogicalSize::new(at.w, at.h))
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    view.set_bounds(page_bounds(&window, at))
+        .map_err(|e| e.to_string())
 }
 
 /// Takes a page off the screen without ending it.
@@ -2935,7 +2932,11 @@ async fn navigate_page(view: &tauri::Webview, tab: &str, target: tauri::Url) -> 
 }
 
 #[cfg(desktop)]
-fn control_page_navigation(view: &tauri::Webview, tab: &str, way: &str) -> Result<(), String> {
+async fn control_page_navigation(
+    view: &tauri::Webview,
+    tab: &str,
+    way: &str,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let _ = tab;
@@ -2946,12 +2947,8 @@ fn control_page_navigation(view: &tauri::Webview, tab: &str, way: &str) -> Resul
         use tauri::Manager;
         let app = view.app_handle();
         match way {
-            "back" => view
-                .eval("history.back()")
-                .map_err(|error| error.to_string()),
-            "forward" => view
-                .eval("history.forward()")
-                .map_err(|error| error.to_string()),
+            "back" => page_history::step(view, page_history::Direction::Back).await,
+            "forward" => page_history::step(view, page_history::Direction::Forward).await,
             "reload" => {
                 let target = page_exits()
                     .lock()
@@ -3064,7 +3061,7 @@ async fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<()
         return Ok(());
     };
     match way.as_str() {
-        "back" | "forward" | "reload" | "stop" => control_page_navigation(&view, &tab, &way),
+        "back" | "forward" | "reload" | "stop" => control_page_navigation(&view, &tab, &way).await,
         // 重试 (UX-22): where the last load failed to go, again — a
         // reload would load the page still there. A Mac that heard no
         // failure, or a platform that hears none, reloads.
@@ -3076,7 +3073,7 @@ async fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<()
             if let Some(url) = target.and_then(|url| url.parse::<tauri::Url>().ok()) {
                 navigate_page(&view, &tab, url).await
             } else {
-                control_page_navigation(&view, &tab, "reload")
+                control_page_navigation(&view, &tab, "reload").await
             }
         }
         // 「仍然访问」 (UX-42 §14): the certificate the failed load was
