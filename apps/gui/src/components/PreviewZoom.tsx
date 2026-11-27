@@ -4,7 +4,8 @@ import { IconMinus, IconPlus } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { groundUnder, inkOver } from "@/lib/deck-fold";
 
-const previewInk = "group-data-[ink=dark]/preview-zoom:text-(--ink-on-light) group-data-[ink=light]/preview-zoom:text-(--ink-on-dark)";
+// Use the same adaptive ink for the glass hover fill and the glyph.
+const previewButton = "[--fill:color-mix(in_srgb,currentColor_20%,transparent)] group-data-[ink=dark]/preview-zoom:text-(--ink-on-light) group-data-[ink=light]/preview-zoom:text-(--ink-on-dark)";
 
 /** The open file can outlive the mounted renderer when another tab is selected. */
 export const PreviewZoomIntroScope = createContext<object | null>(null);
@@ -165,8 +166,8 @@ export function PreviewZoom({ onZoom }: { onZoom: (step: -1 | 1) => void }) {
     className="group/preview-zoom pointer-events-none absolute inset-x-0 bottom-row z-20 mx-auto flex w-fit min-w-40 justify-center px-page pt-row pb-row">
     <GlassCapsule role="group" aria-label={gui.office_tool_zoom}
       className="[--glass-btn:calc(var(--touch)+2*var(--glass-pad))] [--glass-item-h:var(--touch)] [--glass-item-w:var(--touch)] [--ctl-glyph:var(--icon-rail)] pointer-events-none opacity-0 transition-opacity duration-(--dur-180) group-data-[shown]/preview-zoom:pointer-events-auto group-data-[shown]/preview-zoom:opacity-100 group-data-[shown]/preview-zoom:duration-0 has-[:focus-visible]:opacity-100 has-[:focus-visible]:duration-0 motion-reduce:transition-none">
-      <GlassItem className={previewInk} data-preview-zoom-out aria-label={gui.file_size_down} tip={false} onClick={() => onZoom(-1)}><IconMinus/></GlassItem>
-      <GlassItem className={previewInk} data-preview-zoom-in aria-label={gui.file_size_up} tip={false} onClick={() => onZoom(1)}><IconPlus/></GlassItem>
+      <GlassItem className={previewButton} data-preview-zoom-out aria-label={gui.file_size_down} tip={false} onClick={() => onZoom(-1)}><IconMinus/></GlassItem>
+      <GlassItem className={previewButton} data-preview-zoom-in aria-label={gui.file_size_up} tip={false} onClick={() => onZoom(1)}><IconPlus/></GlassItem>
     </GlassCapsule>
   </div>;
 }
