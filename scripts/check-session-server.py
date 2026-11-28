@@ -52,7 +52,10 @@ def check(cli, sidecar, acp):
                     raise ValueError(f"Unexpected detached session ID: {session}")
                 sessions.append(session)
             if acp is not None:
-                session = invoke("open", "--gui", "--title", "session-server ACP", "--", str(acp))
+                fixture = scratch / "ACP fixture" / acp.name
+                fixture.parent.mkdir()
+                shutil.copy2(acp, fixture)
+                session = invoke("open", "--gui", "--title", "session-server ACP", "--", str(fixture))
                 if not re.fullmatch(r"tui/[A-Za-z0-9._-]+", session):
                     raise ValueError(f"Unexpected ACP session ID: {session}")
                 sessions.append(session)
