@@ -225,7 +225,7 @@
           "name": "design-system",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546079,
+          "at_ms": 1795766812408,
           "from": null,
           "received_ms": null
         },
@@ -233,7 +233,7 @@
           "name": "project",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546073,
+          "at_ms": 1795766812405,
           "from": null,
           "received_ms": null
         },
@@ -241,7 +241,7 @@
           "name": "research-notes",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546076,
+          "at_ms": 1795766812407,
           "from": null,
           "received_ms": null
         },
@@ -249,7 +249,7 @@
           "name": "资料库",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546082,
+          "at_ms": 1795766812410,
           "from": null,
           "received_ms": null
         }
@@ -262,7 +262,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546077,
+          "at_ms": 1795766812407,
           "from": null,
           "received_ms": null
         },
@@ -270,7 +270,7 @@
           "name": "media",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546079,
+          "at_ms": 1795766812408,
           "from": null,
           "received_ms": null
         },
@@ -278,7 +278,7 @@
           "name": "office",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546077,
+          "at_ms": 1795766812407,
           "from": null,
           "received_ms": null
         },
@@ -286,7 +286,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546079,
+          "at_ms": 1795766812408,
           "from": null,
           "received_ms": null
         },
@@ -294,7 +294,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -302,7 +302,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -310,7 +310,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -318,7 +318,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -326,7 +326,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         },
@@ -334,7 +334,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -342,7 +342,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546077,
+          "at_ms": 1795766812407,
           "from": null,
           "received_ms": null
         },
@@ -350,7 +350,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         }
@@ -363,7 +363,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         }
@@ -376,7 +376,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -384,7 +384,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         }
@@ -397,7 +397,7 @@
           "name": "app.js",
           "dir": false,
           "size": 280,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -405,7 +405,7 @@
           "name": "audio.wav",
           "dir": false,
           "size": 80078,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -413,7 +413,7 @@
           "name": "clip.mp4",
           "dir": false,
           "size": 80222,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933083,
           "from": null,
           "received_ms": null
         },
@@ -421,7 +421,7 @@
           "name": "counter.js",
           "dir": false,
           "size": 132,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -429,7 +429,23 @@
           "name": "data.json",
           "dir": false,
           "size": 107,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "khor-icon.png",
+          "dir": false,
+          "size": 183300,
+          "at_ms": 1795766378601,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "preview-check.pdf",
+          "dir": false,
+          "size": 2479,
+          "at_ms": 1795766810564,
           "from": null,
           "received_ms": null
         },
@@ -437,7 +453,7 @@
           "name": "preview.html",
           "dir": false,
           "size": 538,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -445,7 +461,7 @@
           "name": "README.md",
           "dir": false,
           "size": 587,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -453,7 +469,7 @@
           "name": "style.css",
           "dir": false,
           "size": 301,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         }
@@ -466,7 +482,7 @@
           "name": "加密周报.docx",
           "dir": false,
           "size": 44544,
-          "at_ms": 1795711195025,
+          "at_ms": 1795764933085,
           "from": null,
           "received_ms": null
         },
@@ -474,15 +490,15 @@
           "name": "阶段汇报.pptx",
           "dir": false,
           "size": 37944,
-          "at_ms": 1795711195078,
+          "at_ms": 1795764933086,
           "from": null,
           "received_ms": null
         },
         {
           "name": "项目周报.docx",
           "dir": false,
-          "size": 38941,
-          "at_ms": 1795711194978,
+          "size": 39023,
+          "at_ms": 1795764933089,
           "from": null,
           "received_ms": null
         },
@@ -490,7 +506,7 @@
           "name": "验收台账.xlsx",
           "dir": false,
           "size": 18746,
-          "at_ms": 1795711195058,
+          "at_ms": 1795764933090,
           "from": null,
           "received_ms": null
         }
@@ -503,7 +519,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -511,7 +527,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -519,7 +535,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         }
@@ -532,7 +548,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546067,
+          "at_ms": 1795766812404,
           "from": null,
           "received_ms": null
         },
@@ -540,7 +556,7 @@
           "name": "media",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546072,
+          "at_ms": 1795766812405,
           "from": null,
           "received_ms": null
         },
@@ -548,7 +564,7 @@
           "name": "office",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546066,
+          "at_ms": 1795766812404,
           "from": null,
           "received_ms": null
         },
@@ -556,7 +572,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546073,
+          "at_ms": 1795766812405,
           "from": null,
           "received_ms": null
         },
@@ -564,7 +580,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -572,7 +588,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -580,7 +596,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -588,7 +604,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -596,7 +612,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         },
@@ -604,7 +620,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -612,7 +628,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546064,
+          "at_ms": 1795766812403,
           "from": null,
           "received_ms": null
         },
@@ -620,7 +636,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         }
@@ -633,7 +649,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         }
@@ -646,7 +662,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -654,7 +670,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         }
@@ -667,7 +683,7 @@
           "name": "app.js",
           "dir": false,
           "size": 280,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -675,7 +691,7 @@
           "name": "audio.wav",
           "dir": false,
           "size": 80078,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -683,7 +699,7 @@
           "name": "clip.mp4",
           "dir": false,
           "size": 80222,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933083,
           "from": null,
           "received_ms": null
         },
@@ -691,7 +707,7 @@
           "name": "counter.js",
           "dir": false,
           "size": 132,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -699,7 +715,23 @@
           "name": "data.json",
           "dir": false,
           "size": 107,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "khor-icon.png",
+          "dir": false,
+          "size": 183300,
+          "at_ms": 1795766378601,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "preview-check.pdf",
+          "dir": false,
+          "size": 2479,
+          "at_ms": 1795766810564,
           "from": null,
           "received_ms": null
         },
@@ -707,7 +739,7 @@
           "name": "preview.html",
           "dir": false,
           "size": 538,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -715,7 +747,7 @@
           "name": "README.md",
           "dir": false,
           "size": 587,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -723,7 +755,7 @@
           "name": "style.css",
           "dir": false,
           "size": 301,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         }
@@ -736,7 +768,7 @@
           "name": "加密周报.docx",
           "dir": false,
           "size": 44544,
-          "at_ms": 1795711195025,
+          "at_ms": 1795764933085,
           "from": null,
           "received_ms": null
         },
@@ -744,15 +776,15 @@
           "name": "阶段汇报.pptx",
           "dir": false,
           "size": 37944,
-          "at_ms": 1795711195078,
+          "at_ms": 1795764933086,
           "from": null,
           "received_ms": null
         },
         {
           "name": "项目周报.docx",
           "dir": false,
-          "size": 38941,
-          "at_ms": 1795711194978,
+          "size": 39023,
+          "at_ms": 1795764933089,
           "from": null,
           "received_ms": null
         },
@@ -760,7 +792,7 @@
           "name": "验收台账.xlsx",
           "dir": false,
           "size": 18746,
-          "at_ms": 1795711195058,
+          "at_ms": 1795764933090,
           "from": null,
           "received_ms": null
         }
@@ -773,7 +805,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -781,7 +813,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -789,7 +821,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         }
@@ -802,7 +834,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546074,
+          "at_ms": 1795766812406,
           "from": null,
           "received_ms": null
         },
@@ -810,7 +842,7 @@
           "name": "media",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546076,
+          "at_ms": 1795766812406,
           "from": null,
           "received_ms": null
         },
@@ -818,7 +850,7 @@
           "name": "office",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546074,
+          "at_ms": 1795766812405,
           "from": null,
           "received_ms": null
         },
@@ -826,7 +858,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546077,
+          "at_ms": 1795766812407,
           "from": null,
           "received_ms": null
         },
@@ -834,7 +866,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -842,7 +874,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -850,7 +882,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -858,7 +890,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -866,7 +898,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         },
@@ -874,7 +906,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -882,7 +914,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546073,
+          "at_ms": 1795766812405,
           "from": null,
           "received_ms": null
         },
@@ -890,7 +922,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         }
@@ -903,7 +935,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         }
@@ -916,7 +948,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -924,7 +956,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         }
@@ -937,7 +969,7 @@
           "name": "app.js",
           "dir": false,
           "size": 280,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -945,7 +977,7 @@
           "name": "audio.wav",
           "dir": false,
           "size": 80078,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -953,7 +985,7 @@
           "name": "clip.mp4",
           "dir": false,
           "size": 80222,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933083,
           "from": null,
           "received_ms": null
         },
@@ -961,7 +993,7 @@
           "name": "counter.js",
           "dir": false,
           "size": 132,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -969,7 +1001,23 @@
           "name": "data.json",
           "dir": false,
           "size": 107,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "khor-icon.png",
+          "dir": false,
+          "size": 183300,
+          "at_ms": 1795766378601,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "preview-check.pdf",
+          "dir": false,
+          "size": 2479,
+          "at_ms": 1795766810564,
           "from": null,
           "received_ms": null
         },
@@ -977,7 +1025,7 @@
           "name": "preview.html",
           "dir": false,
           "size": 538,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -985,7 +1033,7 @@
           "name": "README.md",
           "dir": false,
           "size": 587,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -993,7 +1041,7 @@
           "name": "style.css",
           "dir": false,
           "size": 301,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         }
@@ -1006,7 +1054,7 @@
           "name": "加密周报.docx",
           "dir": false,
           "size": 44544,
-          "at_ms": 1795711195025,
+          "at_ms": 1795764933085,
           "from": null,
           "received_ms": null
         },
@@ -1014,15 +1062,15 @@
           "name": "阶段汇报.pptx",
           "dir": false,
           "size": 37944,
-          "at_ms": 1795711195078,
+          "at_ms": 1795764933086,
           "from": null,
           "received_ms": null
         },
         {
           "name": "项目周报.docx",
           "dir": false,
-          "size": 38941,
-          "at_ms": 1795711194978,
+          "size": 39023,
+          "at_ms": 1795764933089,
           "from": null,
           "received_ms": null
         },
@@ -1030,7 +1078,7 @@
           "name": "验收台账.xlsx",
           "dir": false,
           "size": 18746,
-          "at_ms": 1795711195058,
+          "at_ms": 1795764933090,
           "from": null,
           "received_ms": null
         }
@@ -1043,7 +1091,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -1051,7 +1099,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -1059,7 +1107,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         }
@@ -1072,7 +1120,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546081,
+          "at_ms": 1795766812409,
           "from": null,
           "received_ms": null
         },
@@ -1080,7 +1128,7 @@
           "name": "media",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546082,
+          "at_ms": 1795766812410,
           "from": null,
           "received_ms": null
         },
@@ -1088,7 +1136,7 @@
           "name": "office",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546080,
+          "at_ms": 1795766812409,
           "from": null,
           "received_ms": null
         },
@@ -1096,7 +1144,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546082,
+          "at_ms": 1795766812410,
           "from": null,
           "received_ms": null
         },
@@ -1104,7 +1152,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -1112,7 +1160,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -1120,7 +1168,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -1128,7 +1176,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -1136,7 +1184,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         },
@@ -1144,7 +1192,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -1152,7 +1200,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1795712546080,
+          "at_ms": 1795766812408,
           "from": null,
           "received_ms": null
         },
@@ -1160,7 +1208,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         }
@@ -1173,7 +1221,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933081,
           "from": null,
           "received_ms": null
         }
@@ -1186,7 +1234,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -1194,7 +1242,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         }
@@ -1207,7 +1255,7 @@
           "name": "app.js",
           "dir": false,
           "size": 280,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -1215,7 +1263,7 @@
           "name": "audio.wav",
           "dir": false,
           "size": 80078,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -1223,7 +1271,7 @@
           "name": "clip.mp4",
           "dir": false,
           "size": 80222,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933083,
           "from": null,
           "received_ms": null
         },
@@ -1231,7 +1279,7 @@
           "name": "counter.js",
           "dir": false,
           "size": 132,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -1239,7 +1287,23 @@
           "name": "data.json",
           "dir": false,
           "size": 107,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "khor-icon.png",
+          "dir": false,
+          "size": 183300,
+          "at_ms": 1795766378601,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "preview-check.pdf",
+          "dir": false,
+          "size": 2479,
+          "at_ms": 1795766810564,
           "from": null,
           "received_ms": null
         },
@@ -1247,7 +1311,7 @@
           "name": "preview.html",
           "dir": false,
           "size": 538,
-          "at_ms": 1795701737405,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         },
@@ -1255,7 +1319,7 @@
           "name": "README.md",
           "dir": false,
           "size": 587,
-          "at_ms": 1795701737403,
+          "at_ms": 1795764933082,
           "from": null,
           "received_ms": null
         },
@@ -1263,7 +1327,7 @@
           "name": "style.css",
           "dir": false,
           "size": 301,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933084,
           "from": null,
           "received_ms": null
         }
@@ -1276,7 +1340,7 @@
           "name": "加密周报.docx",
           "dir": false,
           "size": 44544,
-          "at_ms": 1795711195025,
+          "at_ms": 1795764933085,
           "from": null,
           "received_ms": null
         },
@@ -1284,15 +1348,15 @@
           "name": "阶段汇报.pptx",
           "dir": false,
           "size": 37944,
-          "at_ms": 1795711195078,
+          "at_ms": 1795764933086,
           "from": null,
           "received_ms": null
         },
         {
           "name": "项目周报.docx",
           "dir": false,
-          "size": 38941,
-          "at_ms": 1795711194978,
+          "size": 39023,
+          "at_ms": 1795764933089,
           "from": null,
           "received_ms": null
         },
@@ -1300,7 +1364,7 @@
           "name": "验收台账.xlsx",
           "dir": false,
           "size": 18746,
-          "at_ms": 1795711195058,
+          "at_ms": 1795764933090,
           "from": null,
           "received_ms": null
         }
@@ -1313,7 +1377,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -1321,7 +1385,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         },
@@ -1329,7 +1393,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1795701737406,
+          "at_ms": 1795764933091,
           "from": null,
           "received_ms": null
         }
@@ -1427,7 +1491,7 @@
       "encrypted": false
     },
     "office/项目周报.docx": {
-      "total": 38941,
+      "total": 39023,
       "html": "<p>项目进度周报\n2026 年 11 月  ·  Khor Lab 示例文档</p>\n<h1>本周摘要</h1>\n<p>本周完成了<strong>第一阶段验收</strong>，下一步复核跨平台显示和远端文件读取。</p>\n<table><thead><tr><th>工作项</th><th>状态</th><th>负责人</th></tr></thead><tbody>\n<tr><td>需求确认</td><td>已完成</td><td>小林</td></tr>\n<tr><td>接口联调</td><td>进行中</td><td>小周</td></tr>\n<tr><td>体验验收</td><td>计划中</td><td>小陈</td></tr>\n</tbody></table>\n<h1>验收范围</h1>\n<p>中文正文和表格\n段落、页边距与分页\n从侧栏切换其他文件后重新打开</p>\n<hr />\n<h1>下周计划</h1>\n<p>确认移动端的预览范围，收集三类文件的显示差异。\n本文件仅用于预览验收，内容均为虚构。\n本周已完成联调。\n验收得分\n<img src=\"rId10\" alt=\"\" /></p>\n",
       "encrypted": false
     },
@@ -3168,7 +3232,7 @@
     ]
   },
   "_source": {
-    "Cargo.lock": "73cc5c7ba6e7e9a69c7ed982913d0dd488e7e5576c05a28e0715a66456d10747",
+    "Cargo.lock": "ddd1be87c8fef843ea8ffd2ec431392a37e39a53c6b243478dab5c577f509067",
     "crates/core/src/avatar.rs": "ac4b9db9c2c6a22c6579bb387c9c606f46cce8079b7d9822fe69bf268506a49d",
     "crates/core/src/avatar/mark.rs": "14e6a45e011668bf05e9b3c89cd2c15b15c123a65b2adb68c0362fe88095b1d5",
     "crates/node/src/files.rs": "63a1097f8cba5987f00a2dfdcabd0f7da151b5d3dbb0b6fb9ae652e8cf8c407c",
@@ -3178,8 +3242,8 @@
     "apps/gui/core/src/qr.rs": "9e1bd73fcdd6e7afe7bf5d2d71c8551e139562e53c4ced190cef6d9dcc0f07dd",
     "apps/gui/core/src/lib.rs": "7ccd00c0745a7f005a10713e26073f7be1b13e98db019940d3a089430ec445af",
     "crates/node/src/config.rs": "290caa516b1634a98f32e0db63bc00b3b2ce5ade93405c60a5040851ced6f663",
-    "crates/catalog/zh.toml": "138e8d38553e7c61a6e38b5691425302e22b8270df60ce29a5d0d4acdb71e939",
-    "crates/catalog/en.toml": "443acedf3d066186b2965b69100382a39616a81d79c909769fc8019cc70a8afd",
+    "crates/catalog/zh.toml": "1979f6b2b248c60602b30cf4b9db343f36d961726946aeb045e20738fbcf1283",
+    "crates/catalog/en.toml": "fc97ae82ca68188c412a56d064355fadeba792e4206e471ff8453c90d929fa43",
     "apps/gui/dev/lab/data/workspace/.config/preferences.json": "d15be58e7eb7f9813a8f87e0f093475bdaeb61a22917641168ced318ca61b2e2",
     "apps/gui/dev/lab/data/workspace/.gitignore": "4d56952b0fb13bf8f9b6c13a6d4c34a075bac3af447636a1df4335d7576e2f97",
     "apps/gui/dev/lab/data/workspace/README.md": "ad36cf9e020c9284bdaa4987ebd05a1cb9187acaad651956ac8ffec8622b573d",
@@ -3192,12 +3256,14 @@
     "apps/gui/dev/lab/data/workspace/media/clip.mp4": "b6340fa3182476454c25f883bc25b5bbe1ec493a87f682057b9d6b3e999565d3",
     "apps/gui/dev/lab/data/workspace/media/counter.js": "2c597c10eccaf743358e8e34b3277eeebf4e1980b1e7fc82408f1f6cc9f2cdbb",
     "apps/gui/dev/lab/data/workspace/media/data.json": "9766219140a2f8f071ca14aa252d21fb41b395a46a4616ad5029d7aa654060ec",
+    "apps/gui/dev/lab/data/workspace/media/khor-icon.png": "540da37605574ee19032dfdf8a2ced5ece846b97b906ef446ff329bca4bdfab9",
+    "apps/gui/dev/lab/data/workspace/media/preview-check.pdf": "518aac83d2635885726930dda3610b3bfb26396c360def82e31ea0b3b1d5e8f2",
     "apps/gui/dev/lab/data/workspace/media/preview.html": "181c701e4758e890648d31d00e11cce8e128568959b01290fe4977633f545f7d",
     "apps/gui/dev/lab/data/workspace/media/style.css": "bfeb1d03be3e326f83b93386d2c0393bde50c2ef2e0cb8d506990c4987ce2a20",
     "apps/gui/dev/lab/data/workspace/notes.md": "5de2c9ce72d960bf66a6c1c99d8fea3ddc9396a840de3c01eb8e11b15fbb4c30",
     "apps/gui/dev/lab/data/workspace/office/加密周报.docx": "8b9646829f49889f04790aa1f03b54d80a076dd4b6ab758a35ee0a248a3dee0c",
     "apps/gui/dev/lab/data/workspace/office/阶段汇报.pptx": "506cdd9d6d7bd2935c6554f0de4b2e7ba32133e7fc3ff1caff1d6cddb461599c",
-    "apps/gui/dev/lab/data/workspace/office/项目周报.docx": "e530efdcffd1790c55514e52bc28422846cccb7ab874b05d8f50eecbe9bd47e5",
+    "apps/gui/dev/lab/data/workspace/office/项目周报.docx": "5c8ebd6e419ba15d7f9715c005a091fe251246bf03ab31e162d9e8cf3e00c97e",
     "apps/gui/dev/lab/data/workspace/office/验收台账.xlsx": "8a3696bfb06a8a77594a86d3a7cbafee40f5c9f6086d86d5a24d79a7090ae075",
     "apps/gui/dev/lab/data/workspace/package.json": "532e45105028b94a968e65fb3c12ca69febc4799876569b52ebf33ee12f67862",
     "apps/gui/dev/lab/data/workspace/plan.md": "458fbdc195ca00903530c1d0c943564de907a0d9b2778f034728b134377d0765",
@@ -3206,5 +3272,5 @@
     "apps/gui/dev/lab/data/workspace/src/app.ts": "aa86c4f80a12ab65cd5ef6b71aae1636d7186648222e06f1e2b18a3dcac4ef05",
     "apps/gui/dev/lab/data/workspace/src/navigation.ts": "aaeff633369c4afdbb21c8b53096d13afa98efa1b99bee609e05c6d8bcc07d0a"
   },
-  "_payload_sha256": "95266dfd6892b1b120b90f3b0103fbca39d9d21e92f721257ca36a7a771d975b"
+  "_payload_sha256": "38bc2c85bf5f9c91be36fc9bef3e3e892c8736c41e071cb14a97d2c652691414"
 }

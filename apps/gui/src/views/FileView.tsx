@@ -31,7 +31,7 @@ import {useDraftCount} from "@/hooks/use-draft-count";
 // broken, which is the failure `check-acp` 第二批 names.
 import { useFileHandoff, type FileHandoffControl } from "@/hooks/use-file-handoff";
 import { FileHandoffAction, FileHandoffStatus } from "@/components/FileHandoff";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { fileRefresh } from "@/lib/file-refresh";
 
 import {
@@ -55,13 +55,14 @@ import type { EditorHistorySlot } from "@/lib/code/history";
 import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import {ResourcePreview} from "@/components/ResourcePreview";
 import { OFFICE_PREVIEW_LIMIT, OfficePreview, officeFormat, type OfficeFailure } from "@/components/OfficePreview";
+import { PreviewZoom, PreviewZoomIntroScope } from "@/components/PreviewZoom";
 import { RegionState } from "@/components/RegionState";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { IconClose } from "@/components/icons";
-import { cli, gui } from "@/gen/catalog";
+import { cli, gui, msg } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { blameOfLines, useBlameShown } from "@/lib/blame";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
@@ -87,6 +88,8 @@ import { needsOf } from "@/lib/md/blocks";
 import { prepare } from "@/lib/md/extras";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
+
+const PdfPreview = lazy(() => import("@/components/PdfPreview"));
 
 /** The same table `khor_node::preview::kind` keeps, for the one
     question this view must answer **before** asking anything: which of
@@ -283,11 +286,18 @@ export function defaultFaceOf(path: string): "source" | "preview" {
   return rendererOf(path) === "ipynb" ? "preview" : "source";
 }
 
-export function FileView(props: Omit<Parameters<typeof FileBody>[0],"handoff"> & {handoff?:FileHandoffControl}) {
+export function FileView({ zoomIntroScope, ...props }: Omit<Parameters<typeof FileBody>[0],"handoff"> & {
+  handoff?: FileHandoffControl;
+  /** Identity of the open tab when the host remounts the file on selection. */
+  zoomIntroScope?: object;
+}) {
   const own=useFileHandoff(props.machine,props.path,!props.handoff&&!props.localFile);
   const handoff=props.handoff??own;
+  const fileScope = useMemo(() => ({}), [props.machine, props.path]);
   return <div ref={own.owner} data-file-body className="relative flex min-h-0 flex-1 flex-col">
-    <FileBody key={JSON.stringify([props.machine,props.path])} {...props} handoff={handoff}/>
+    <PreviewZoomIntroScope.Provider value={zoomIntroScope ?? fileScope}>
+      <FileBody key={JSON.stringify([props.machine,props.path])} {...props} handoff={handoff}/>
+    </PreviewZoomIntroScope.Provider>
     {!props.handoff&&<FileHandoffStatus handoff={handoff}/>}
   </div>;
 }
@@ -309,8 +319,10 @@ function FileBody({
   onCanEdit,
   editorHistory,
   localFile,
+  readingToolsSeat,
 }: {
   localFile?: File;
+  readingToolsSeat?: HTMLElement | null;
   handoff: FileHandoffControl;
   /** An open-tab owner may retain this across the file view's remount. */
   editorHistory?: EditorHistorySlot;
@@ -517,7 +529,8 @@ function FileBody({
   // not a checkout is drawn — **nothing** — and the state it was held
   // in is gone with the row that read it.
   /** A picture zooms under two fingers (`usePinch`). */
-  const pinch = usePinch();
+  const imageZoom = useRef<((factor: number) => void) | null>(null);
+  const pinch = usePinch(imageZoom);
   /** Bumped to ask the diff again. **A counter rather than a boolean**:
       two saves in a row have to be two questions, and a flag that was
       already true would answer the second one with the first one's
@@ -989,7 +1002,7 @@ function FileBody({
     }
     const source = localFile ?? look?.data;
     if (localFile?.size === 0) return previewSurface(<RegionState state="empty" message={gui.doc_empty}/>);
-    if (inlineOffice && source) return previewSurface(<OfficePreview format={inlineOffice} source={source} onFallback={fallBackOffice}/>);
+    if (inlineOffice && source) return previewSurface(<OfficePreview format={inlineOffice} source={source} onFallback={fallBackOffice} toolbarSeat={readingToolsSeat}/>);
     if (lookError !== null || look !== null) return previewSurface(
       <Away path={path} handoff={handoff} total={total ?? null}
         word={look?.empty ? gui.doc_empty : ""} onTake={take} took={took}/>);
@@ -1012,33 +1025,26 @@ function FileBody({
       // sanitiser. An image element renders the same drawing and runs
       // nothing — the browser's own rule, not khor's.
       return previewSurface(
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
           <img
             ref={pinch}
             data-look={look.kind}
             src={`data:${look.media};base64,${look.data}`}
             alt=""
-            className="max-h-full max-w-full object-contain"
+            className="max-h-full max-w-full object-contain data-[image-pan=ready]:cursor-grab data-[image-pan=dragging]:cursor-grabbing"
           />
+          <PreviewZoom onZoom={step => imageZoom.current?.(step > 0 ? 1.25 : 0.8)}/>
         </div>
       );
     }
     if (look.kind === "pdf" && pdfAt !== null) {
-      // **The file itself, drawn by the browser** (「pdf 你咋转成字符
-      // 了,应该直接预览」— the user, 2026-09-14). An `<iframe>` rather
-      // than `<object>`: both reach the same viewer, and a frame is the
-      // one of the two whose failure mode is a blank rectangle rather
-      // than a silent fallback to nothing.
+      const fallback = navigator.pdfViewerEnabled ? <iframe data-pdf-frame src={pdfAt}
+        title={path.split("/").pop() ?? path} className="min-h-0 flex-1 border-0"/> :
+        <Away path={path} handoff={handoff} total={look.total} word={msg.file_preview_unavailable} onTake={take} took={took}/>;
       return previewSurface(
-        <div className="flex min-h-0 flex-1 flex-col">
-          <iframe
-            data-pdf-frame
-            src={pdfAt}
-            title={path.split("/").pop() ?? path}
-            className="min-h-0 flex-1 border-0"
-          />
-        </div>
-      );
+        <Suspense fallback={<RegionState state="loading-never"/>}>
+          <PdfPreview key={pdfAt} url={pdfAt} fallback={fallback}/>
+        </Suspense>);
     }
     if (look.kind === "doc" || look.kind === "pdf") {
       return previewSurface(
@@ -1061,14 +1067,8 @@ function FileBody({
               />
             </div>
           )}
-          {/* Said once, under the document rather than over it: it is a
-              caveat about what you are reading, not a warning.
-
-              **A PDF that got here says something else**: it is not on
-              the words road because khor reads words, it is on it
-              because this browser draws no PDFs
-              (`khor_node::preview::PDF_HERE`), and that is a different
-              sentence about a different reason. */}
+          {/* Older backends can return a PDF's extracted text. Identify
+              that fallback under the document. */}
           <div
             data-doc-note={look.kind}
             className="flex-none border-t px-3 py-1.5 text-callout text-muted-foreground"

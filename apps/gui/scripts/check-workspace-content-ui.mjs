@@ -217,16 +217,18 @@ try{
  const nativePhone=await browser.newPage({viewport:mobile?{width:390,height:844}:{width:1400,height:900},isMobile:mobile,hasTouch:mobile});
  nativePhone.on('pageerror',e=>errors.push(e.message));
  await nativePhone.addInitScript(()=>{
-   const callbacks=new Map(),listeners=new Map();let serial=0;
+   const callbacks=new Map(),listeners=new Map(),pageStateQueries=new Map();let serial=0;
    window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main',windowLabel:'main'}},
      transformCallback:callback=>{const id=++serial;callbacks.set(id,callback);return id;},unregisterCallback:id=>callbacks.delete(id),convertFileSrc:path=>path,
      invoke:async(cmd,args={})=>{
        if(cmd==='plugin:event|listen'){const id=++serial;listeners.set(id,args);return id;}
        if(cmd==='plugin:event|unlisten'){listeners.delete(args.eventId);return null;}
+       if(cmd==='page_state')pageStateQueries.set(args.tab,(pageStateQueries.get(args.tab)??0)+1);
        const response=await fetch('/api/'+cmd,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(args)});
        const value=await response.json();if(!response.ok)throw new Error(value);return value;
      }};
    window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+   window.__fixturePageStateQueries=tab=>pageStateQueries.get(tab)??0;
    window.__fixtureNavigation=payload=>{for(const [id,listener]of listeners)if(listener.event==='page:navigation')callbacks.get(listener.handler)?.({id,event:listener.event,payload});};
  });
  await nativePhone.goto(url+(mobile?'?mobile=1':''));await nativePhone.waitForFunction(()=>window.__workspaceProbe?.content.ready);
@@ -234,6 +236,7 @@ try{
  const webpage=nativePhone.locator('[data-content-visible="true"] .mobile-content-page'),host=webpage.locator('[data-page-host]');
  await host.waitFor();await nativePhone.waitForFunction(()=>document.querySelector('[data-content-visible="true"] [data-page-host]')?.dataset.nativePageVisible==='true');
  const handle=await host.getAttribute('data-native-page-tab'),tabCount=await nativePhone.evaluate(()=>window.__workspaceProbe.content.allTabs.length);
+ let previousQueries=0;
  if(mobile){
  const band=webpage.locator('[data-deck-band]'),box=await band.boundingBox();assert(box&&box.width>0);
  const touch=await nativePhone.context().newCDPSession(nativePhone),point={x:box.x+box.width/2,y:box.y+box.height/2,id:1};
@@ -247,9 +250,13 @@ try{
  await nativePhone.locator('[data-lab-fan-overview][data-active]').waitFor();
  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
  const browserOverview=nativePhone.locator('[data-content-overview]:not([inert])');await browserOverview.waitFor();
+ previousQueries=await nativePhone.evaluate(tab=>window.__fixturePageStateQueries(tab),handle);
  await browserOverview.locator('[data-content-overview-tab][data-on="true"]').click();await webpage.waitFor();
  assert.equal(await nativePhone.evaluate(()=>window.__workspaceProbe.content.allTabs.length),tabCount,'overview gestures preserve the current tab');
  }
+ // The resumed page subscribes again before reading its native snapshot.
+ await nativePhone.waitForFunction(({tab,previous})=>window.__fixturePageStateQueries(tab)>previous,
+   {tab:handle,previous:previousQueries});
  await nativePhone.evaluate(tab=>window.__fixtureNavigation({tab,view:'1',navigation:'1',revision:'1',phase:'started',estimate:.6,requested_url:'https://fixture.invalid/page',url:'https://fixture.invalid/page',exit:'',proxied:false,error:null}),handle);
  const progress=webpage.locator('[data-pill-progress]');await progress.waitFor();
  assert.equal(await progress.getAttribute('data-pill-progress'),'0.6','The pill projects the actual native estimate');

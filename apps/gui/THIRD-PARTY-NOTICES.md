@@ -43,3 +43,8 @@ Files khor's interface ships that were made by others, with their licences.
 
 - Decodes pairing QR codes from user-selected photos on the device.
 - Licence: Apache-2.0 — `node_modules/jsqr/LICENSE`.
+
+## Mozilla PDF.js
+
+- Renders embedded PDF previews from the original bytes.
+- Licence: Apache-2.0 — `licenses/pdfjs/LICENSE`. Font and decoder notices ship alongside their assets.

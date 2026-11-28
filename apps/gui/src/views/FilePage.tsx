@@ -38,6 +38,7 @@ import { caretCoveredAt, editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
+import { officeFormat } from "@/components/OfficePreview";
 import {ContentPill} from '@/components/ContentDeck';
 import { DeckBand, TabSheet } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
@@ -140,6 +141,7 @@ function useFileVerbs({
   onRevision,
   previewing,
   faceToggle,
+  readingTools,
   handoff,
   additionalActions = [],
   more = true,
@@ -153,6 +155,7 @@ function useFileVerbs({
   previewing?: boolean;
   /** Independent preview/source toggle grouped with the more menu. */
   faceToggle?: { face: "source" | "preview"; run: () => void };
+  readingTools?: ReactNode;
   machine: string;
   path: string;
   here: boolean;
@@ -219,7 +222,7 @@ function useFileVerbs({
   ];
   const afterClose=useRef<FileMenuAction | null>(null);
   useLayoutEffect(() => () => { afterClose.current=null; }, [machine,path]);
-  const MoreButton = faceToggle ? GlassItem : GlassCircle;
+  const MoreButton = faceToggle || readingTools ? GlassItem : GlassCircle;
   const moreMenu: ReactNode = (
     <DropdownMenu onOpenChange={(o) => o && setHasSymbols(hasSymbolsIn(path))}>
       <DropdownMenuTrigger asChild>
@@ -289,9 +292,10 @@ function useFileVerbs({
       )}
     </>
   );
-  const moreCircle = faceToggle ? (
+  const moreCircle = faceToggle || readingTools ? (
     <GlassCapsule data-file-actions role="group" aria-label={gui.file_actions}>
-      <GlassItem data-file-face-toggle={faceToggle.face} aria-label={faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview} aria-pressed={faceToggle.face === "preview"} on={faceToggle.face === "preview"} onClick={faceToggle.run} tip={!coarse && (faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview)}><IconEye /></GlassItem>
+      {faceToggle && <GlassItem data-file-face-toggle={faceToggle.face} aria-label={faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview} aria-pressed={faceToggle.face === "preview"} on={faceToggle.face === "preview"} onClick={faceToggle.run} tip={!coarse && (faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview)}><IconEye /></GlassItem>}
+      {readingTools}
       {more && moreMenu}
     </GlassCapsule>
   ) : more ? moreMenu : null;
@@ -300,12 +304,12 @@ function useFileVerbs({
 
 /** The Mac's workspace strip carries the same verbs at its right end
     (round UX-3): 分享 and 「…」, beside the tab they are about. */
-export function FileVerbs({ toolbar, ...props }: Omit<Parameters<typeof useFileVerbs>[0], "additionalActions"> & {
-  toolbar?: { leading: ReactNode; actions: readonly FileMenuAction[] };
+export function FileVerbs({ toolbar, ...props }: Omit<Parameters<typeof useFileVerbs>[0], "additionalActions" | "readingTools"> & {
+  toolbar?: { leading: ReactNode; actions: readonly FileMenuAction[]; readingTools?: ReactNode };
 }) {
   const own = useFileHandoff(props.machine, props.path, !props.handoff);
   const handoff = props.handoff ?? own;
-  const v = useFileVerbs({...props,handoff,additionalActions:toolbar?.actions});
+  const v = useFileVerbs({...props,handoff,additionalActions:toolbar?.actions,readingTools:toolbar?.readingTools});
   return (
     <div ref={own.owner} data-file-verbs className="flex flex-none items-center gap-in">
       {toolbar?.leading}
@@ -436,6 +440,8 @@ export function FilePage({
   const setFace = faceControl?.set ?? setLocalFace;
   const controlledFace = faceControl !== undefined;
   const handoff = useFileHandoff(machine,path,!localFile);
+  const [readingToolsSeat, setReadingToolsSeat] = useState<HTMLDivElement | null>(null);
+  const previewReadingTools = !!embeddedToolbar && rev === null && officeFormat(path) !== null;
   const verbs = useFileVerbs({
     more,
     machine,
@@ -454,6 +460,8 @@ export function FilePage({
     // 字号 and 预览背景 only while the file is read rendered (UX-14).
     previewing: previewable ? face === "preview" : false,
     faceToggle: rev === null && previewable ? { face, run: () => turn() } : undefined,
+    readingTools: previewReadingTools ? <div ref={setReadingToolsSeat}
+      className="flex items-center" data-content-reading-tools/> : undefined,
     handoff,
   });
   /** A re-read asked for from the pill's ↻ (UX-33), added to the one asked
@@ -566,7 +574,7 @@ export function FilePage({
   return (
     <div
       ref={handoff.owner}
-      data-file-page
+      data-file-page={embedded || contentDeck ? "contained" : "standalone"}
       data-file-face={face}
       data-folded={!embedded && folded || undefined}
       // **预览背景 covers the page, not only the text** (round UX-4): the
@@ -574,7 +582,7 @@ export function FilePage({
       // on, or it would be the app's ink on a ground that is not the
       // app's.
       {...(face === "preview" && (rev === null || (!compare && revisionRenders(path)))) ? groundAttr(verbs.ground) : {}}
-      className="relative flex min-h-0 flex-1 flex-col bg-card"
+      className={cn("relative flex min-h-0 flex-1 flex-col bg-card", previewReadingTools && "@container/reading")}
       style={fileSizeStyle(verbs.size.step)}
     >
       {embedded && embeddedToolbar?.(<>
@@ -612,6 +620,7 @@ export function FilePage({
         ) : (
         <FileView
           handoff={handoff}
+          readingToolsSeat={previewReadingTools ? readingToolsSeat : null}
           localFile={localFile}
           editorHistory={editorHistory ?? localHistory.current}
           key={`${machine} ${path}`}

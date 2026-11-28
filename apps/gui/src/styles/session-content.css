@@ -156,7 +156,8 @@
 
 /* Session content's location and directory verbs: one shared toolbar, at
    the top on desktop and in the content deck on touch screens. */
-.session-content-location-bar{display:flex;align-items:center;gap:var(--gap-in);flex:none;min-height:var(--pane-head);padding:var(--gap-in) var(--gap-row)}
+.session-content-location-bar{display:flex;align-items:center;gap:var(--gap-in);flex:none;min-height:var(--pane-head);padding-block:var(--gap-in)}
+[data-session-content-head]>[data-tab-bar],.session-content-location-bar{padding-inline:var(--page-inset)}
 [data-session-tabs] > [data-tab-bar]{padding-inline-end:var(--gap-row)}
 .session-content-location-bar,.session-content-page-bar{--ctl-glyph:var(--nav-glyph)}
 .content-location-pill{display:flex;align-items:center;min-width:0;flex:1;height:var(--glass-btn);border-radius:var(--radius-full);padding-inline:calc(var(--gap-in) / 2)}
@@ -178,6 +179,9 @@
 [data-content-directory-search-field] .content-search-field{height:100%}
 .session-content-location-bar .content-location-pill>[data-page-field-row]{height:100%}
 .session-content-location-bar .content-location-pill [data-page-field]{background:transparent;box-shadow:none}
+
+[data-content-toolbar="file"]:has([data-content-reader-find]) > :is([data-content-scope],[data-content-back],[data-file-actions]),
+[data-content-location-layer]:has(> [data-content-reader-find]) > :not([data-content-reader-find]){display:none}
 
 /* A source is selected in the same app glass navigation at every desktop destination. */
 [data-content-toolbar]{order:-1}

@@ -526,11 +526,14 @@ aside[data-side] {
    starts at the row inset the title row ends with: the strip fits, its
    right edge on the title row's, 「更多」 over the search circle — folded
    or not. */
-/* UX-19: wherever there are no window buttons — a finger, the web face,
-   a Mac window in fullscreen (the stamp is dropped there) — the first row
-   starts where the title under it does (the list's 20, `SideHead`).
-   ⚠️ 墓碑: under a finger only, at the row inset. */
-:root:not([data-traffic]) :is([data-wide-top], [data-folded-lead]) {
+/* The wide navigation and the title row share the list's insets. */
+[data-wide-band] :is([data-wide-top], [data-side-head]) {
+  padding-inline: var(--gap-group);
+}
+:root[data-traffic] [data-wide-top] {
+  padding-inline-start: var(--wide-lead-start);
+}
+:root:not([data-traffic]) [data-folded-lead] {
   padding-inline-start: var(--gap-group);
 }
 
@@ -562,7 +565,7 @@ aside[data-side] {
    window's corner the first row is the platform's (as `[data-session-top]`
    above), so the text starts below it. ⚠️ 墓碑 (UX-14): the name pill sat
    on that row's centre; the name is the deck's now. */
-:root[data-traffic] [data-file-page] :is([data-file-scroll], [data-file-preview], [data-diff-tab]) {
+:root[data-traffic] [data-file-page="standalone"] :is([data-file-scroll], [data-file-preview], [data-diff-tab]) {
   padding-top: calc(var(--pane-head) + var(--gap-in));
   scroll-padding-top: calc(var(--pane-head) + var(--gap-in));
 }
@@ -2543,8 +2546,9 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
 [data-file-page] :is([data-file-scroll], [data-file-preview]) {
   padding-bottom: calc(var(--dock-safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
 }
-/* A top toolbar owns its port's clearance; floating decks only reserve the safe area. */
-[data-file-page] :is([data-file-scroll], [data-file-preview]):not([data-band-scroll]) {
+/* A session location toolbar or mobile sheet already clears the top edge.
+   A standalone file reserves its own safe area unless a band owns the port. */
+[data-file-page="standalone"] :is([data-file-scroll], [data-file-preview]):not([data-band-scroll]) {
   padding-top: calc(var(--safe-top) + var(--gap-in));
   scroll-padding-top: calc(var(--safe-top) + var(--gap-in));
 }
@@ -2558,8 +2562,10 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
    view, whose two halves scroll on their own: the view as a whole clears
    the status bar and the deck instead. */
 [data-file-page] [data-diff-tab] {
-  padding-top: calc(var(--safe-top) + var(--gap-in));
   padding-bottom: calc(var(--dock-safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
+}
+[data-file-page="standalone"] [data-diff-tab] {
+  padding-top: calc(var(--safe-top) + var(--gap-in));
 }
 
 /* **The browser's deck steps aside for the page's own keyboard** (round
