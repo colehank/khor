@@ -14,6 +14,7 @@ net-diagnostics = ["dep:tracing-subscriber"]
 [dependencies]
 khor-commands = { path = "../commands" }
 khor-catalog.workspace = true
+khor-node.workspace = true
 # Native hosts supply the web listener to the shared command engine.
 khor-web = { path = "../web" }
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"], optional = true }
@@ -23,7 +24,6 @@ libc.workspace = true
 
 [dev-dependencies]
 khor-runtime.workspace = true
-khor-node.workspace = true
 khor-core.workspace = true
 khor-acp = { path = "../acp" }
 khor-net.workspace = true

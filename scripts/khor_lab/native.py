@@ -38,6 +38,8 @@ def build(root, output, source, frontend):
     environment = dict(os.environ, TAURI_CONFIG=json.dumps(config), KHOR_AGENT_BUNDLE=str(agent),
                        CARGO_INCREMENTAL='0', CARGO_PROFILE_DEV_DEBUG='0')
     subprocess.run(['cargo', 'build', '--locked', '-p', 'khor-gui', '--no-default-features', '--features', 'devtools'], cwd=root, env=environment, check=True)
+    subprocess.run(['cargo', 'build', '--locked', '-p', 'khor-node', '--bin', 'khor-server'],
+                   cwd=root, env=environment, check=True)
     app = output / 'KhorDeveloperLab.app'
     programs = app / 'Contents/MacOS'
     programs.mkdir(parents=True, exist_ok=True)
@@ -49,6 +51,9 @@ def build(root, output, source, frontend):
                  CFBundleExecutable='KhorDeveloperLab', CFBundlePackageType='APPL', CFBundleVersion='1',
                  CFBundleShortVersionString='0.0.0', NSHighResolutionCapable=True, LSMinimumSystemVersion='13.0')
     (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(plist))
+    server = programs / 'khor-server'
+    shutil.copy2(target_dir / 'debug/khor-server', server)
+    subprocess.run(['codesign', '--force', '--sign', '-', str(server)], check=True)
     subprocess.run(['codesign', '--force', '--sign', '-', str(app)], check=True)
     subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
     result = probe(app, frontend, root, port, output)

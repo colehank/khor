@@ -47,11 +47,11 @@ GitHub资产先上传到草稿，逐个校验摘要和大小，全部就绪才�
 
 ## Apple阶段与失败重试
 
-Mac 构建与公证分为三个独立任务。`mac-app` 编译 App 和同版本 CLI，以 Developer ID Application 签名，再用独立的 Developer ID Installer 签发 PKG。原始 PKG 与源码、前端、Pi、文件摘要收据保存在 `mac-build-<平台>`；Tauri 构建子进程不接收公证凭据。`mac-submit` 先保存提交意图，再非等待提交 Apple，立即将请求 ID 保存为 `notary-request-<平台>`。`mac-notarize` 查询这个 ID，通过后为 PKG 和其中的 App 附加票据，验证安装包与 App 签名，再保存 PKG、供 Tauri updater 使用的 App 归档和 `notarization.json`。候选分发要求两个 Mac 包都有相同源码/run 的 Accepted 记录。
+Mac 构建与公证分为三个独立任务。`mac-app` 编译 App、CLI 和会话宿主 `khor-server`。宿主和 App 分别用 Developer ID Application 签名，PKG 使用 Developer ID Installer 签名。原始 PKG 与源码、前端、Pi、文件摘要收据保存在 `mac-build-<平台>`；Tauri 构建子进程不接收公证凭据。`mac-submit` 先保存提交意图，再非等待提交 Apple，立即将请求 ID 保存为 `notary-request-<平台>`。`mac-notarize` 查询这个 ID，通过后为 PKG 和其中的 App 附加票据，验证安装包与 App 签名，再保存 PKG、供 Tauri updater 使用的 App 归档和 `notarization.json`。候选分发要求两个 Mac 包都有相同源码/run 的 Accepted 记录。
 
 用户安装选择 `khor-macos-arm64.pkg`（Apple 芯片）或 `khor-macos-x86_64.pkg`（Intel）。两者都安装到 `/Applications/Khor.app`，并在空闲时为 `/usr/local/bin/khor` 建立指向包内 CLI 的链接。App 更新会一起替换其 CLI。独立 CLI 安装继续用 `khor upgrade`；在仅安装 CLI 的机器上可用 `khor web`，装好 App 后用 `khor gui` 打开。普通用户对 `/Applications` 没有写权限时，用新版 PKG 更新。
 
-Linux 桌面提供 x86_64、arm64 的 Debian 安装包，面向 Ubuntu 24.04 及兼容发行版，随附同版本 CLI；GTK/WebKit 依赖交给包管理器。独立服务器 CLI 保持 glibc 2.31 下限。Windows 提供 x86_64 MSI，安装目录内同时包含 App 与 CLI，将该目录追加到当前用户的 PATH。已有用户 PATH 项的顺序保留，新的终端可使用命令。两个平台的系统安装包使用原安装器或包管理器更新，应用设置展示其安装归属。
+Linux 桌面提供 x86_64、arm64 的 Debian 安装包，面向 Ubuntu 24.04 及兼容发行版，随附 CLI 和会话宿主。GTK/WebKit 依赖交给包管理器。Windows x86_64 MSI 在同一安装目录放置 App、CLI 和会话宿主，并将该目录追加到当前用户的 PATH。独立 CLI 将会话宿主嵌入原有单文件产物。Linux 独立 CLI 和嵌入的宿主保持 glibc 2.31 下限。已有用户 PATH 项的顺序保留，新的终端可使用命令。两个平台的系统安装包使用原安装器或包管理器更新，应用设置展示其安装归属。
 
 Linux 包不会覆盖独立放置于 /usr/bin/khor 的文件；已有 Khor Debian 包可以原位升级。Windows 卸载移除本次安装器加入的 PATH 项。发行构建会在隔离 runner 上实际安装、检查 App/CLI 的源码与运行契约、通过 khor gui 启动应用，再卸载并核对独立 CLI 的保留。
 

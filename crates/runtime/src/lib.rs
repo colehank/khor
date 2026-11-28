@@ -44,10 +44,11 @@ pub enum Role {
     Cli,
     DesktopHost,
     Agent,
+    SessionHost,
 }
 
 impl Role {
-    fn executable(self) -> &'static str {
+    pub fn executable(self) -> &'static str {
         match (self, cfg!(windows)) {
             (Self::Cli, false) => "khor",
             (Self::Cli, true) => "khor.exe",
@@ -55,6 +56,8 @@ impl Role {
             (Self::DesktopHost, true) => "khor-gui.exe",
             (Self::Agent, false) => "khor-agent",
             (Self::Agent, true) => "khor-agent.exe",
+            (Self::SessionHost, false) => "khor-server",
+            (Self::SessionHost, true) => "khor-server.exe",
         }
     }
 }

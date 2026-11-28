@@ -886,7 +886,7 @@ The same workspace-content UI gate projects native navigation events through the
 
 - `npm run acp-setup`：内置与扩展接入标签、有限启动原因、不回显任意 stderr、未知原因兜底；已加入 `test:unit`。
 - 完整 App Lab 的桌面/手机新建页：内置 Codex/Claude 读取成功状态、终端不发 ACP 设置、扩展失败原因和重试、请求沿所选机器；共用实际 NewSessionPage/AcpAgentSetup。fixture 仅模拟数据，不证明原生进程可用。
-- 原生 `acp_management::tests` 与 `acp_process::tests` 验证内置路由、真实扩展 stdin/stdout 初始化、执行节点的凭证目录、失败清理和重试；macOS 签名 App 宿主必须保留完整 bundle，不能用未签名 CLI 的检查代替。真机验收包括本机/远端的新建和读取、已有会话持续运行。
+- 原生 `acp_management::tests` 与 `acp_process::tests` 验证内置路由、真实扩展 stdin/stdout 初始化、执行节点的凭证目录、失败清理和重试。桌面正式包包含独立会话宿主 `khor-server`。macOS 检查宿主在包内及复制至运行目录后的签名。真机验收包括本机和远端的新建、读取及会话持续运行。
 
 ### 添加机器的入口与配对方向（2026-11-08 Lab）
 

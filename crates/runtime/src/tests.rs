@@ -376,6 +376,43 @@ fn node_collection_reaches_registered_cli_stores_and_preserves_live_and_rollback
 }
 
 #[test]
+fn session_images_share_a_catalog_and_collect_only_after_the_last_lease() {
+    let directory = tempfile::tempdir().unwrap();
+    let limits = Limits {
+        free_bytes: 0,
+        ..Limits::default()
+    };
+    let legacy = Store::open(directory.path().join("runtime"), limits).unwrap();
+    let server = Store::open(directory.path().join("runtime-sessions"), limits).unwrap();
+    let publish = |bytes: &[u8]| {
+        server
+            .publish(
+                Role::SessionHost,
+                "1",
+                contract(),
+                BTreeMap::new(),
+                Source::Bytes(bytes),
+            )
+            .unwrap()
+    };
+    let first = publish(b"old");
+    let peer = publish(b"old");
+    assert_eq!(first.path(), peer.path());
+    let retired = first.path().to_path_buf();
+    let current = publish(b"new");
+    assert_eq!(legacy.usage_all().unwrap().active_old_bytes, 3);
+    assert!(legacy.occupied_contracts().unwrap().contains(&contract()));
+    drop(first);
+    legacy.collect_all().unwrap();
+    assert!(retired.is_file());
+    drop(peer);
+    legacy.collect_all().unwrap();
+    assert!(!retired.exists());
+    assert!(current.path().is_file());
+    assert!(legacy.contracts().unwrap().is_empty());
+}
+
+#[test]
 fn current_and_one_rollback_are_retained_and_a_failed_publication_does_not_evict_either() {
     let fixture = Fixture::new();
     let store = fixture.store();

@@ -1,5 +1,8 @@
 //! Select an executable and its compatibility contract before opening user data or detaching a host.
 mod activation;
+mod session_server;
+pub use session_server::register_embedded as register_embedded_session_server;
+pub(crate) use session_server::{enter as enter_session_server, select as session_host};
 #[cfg(test)]
 mod compatibility_tests;
 
@@ -47,12 +50,15 @@ fn current() -> Result<Info, String> {
     let executable = crate::self_exe()?;
     let role = match executable.file_name().and_then(|name| name.to_str()) {
         Some("khor-gui" | "khor-gui.exe") => Role::DesktopHost,
+        Some(name) if name == Role::SessionHost.executable() => Role::SessionHost,
         _ => Role::Cli,
     };
     #[allow(unused_mut)]
     let mut embedded = BTreeMap::new();
     #[cfg(khor_embedded_agent)]
-    embedded.insert("pi".into(), env!("KHOR_AGENT_BUNDLE_BLAKE3").to_owned());
+    if role != Role::SessionHost {
+        embedded.insert("pi".into(), env!("KHOR_AGENT_BUNDLE_BLAKE3").to_owned());
+    }
     let wire = include_str!("proto.rs").replace("\r\n", "\n");
     let fingerprint = format!("{:x}", Sha256::digest(wire.as_bytes()));
     // These exact audited revisions add FileResource, SessionImport, then
@@ -93,7 +99,7 @@ fn current() -> Result<Info, String> {
                 agent: 1,
             },
             embedded,
-            portable: cfg!(khor_embedded_agent),
+            portable: role != Role::SessionHost && cfg!(khor_embedded_agent),
         },
         executable,
     })
@@ -101,12 +107,8 @@ fn current() -> Result<Info, String> {
 
 /// Every native face and the re-executing integration harness enter here before Node::open.
 pub fn process_entry() {
-    #[cfg(windows)]
-    if let Err(error) = crate::win_process::privatize_standard_handles() {
-        eprintln!("{error}");
-        std::process::exit(1);
-    }
-    crate::startup_trace::begin();
+    prepare_entry();
+    report_runtime_info();
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("_verify_release")) {
         let result = (|| -> Result<String, String> {
             let args = std::env::args_os().skip(2).collect::<Vec<_>>();
@@ -136,20 +138,6 @@ pub fn process_entry() {
     }
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("_release_info")) {
         match crate::updates::program_info()
-            .and_then(|info| serde_json::to_string(&info).map_err(|error| error.to_string()))
-        {
-            Ok(info) => {
-                println!("{info}");
-                std::process::exit(0);
-            }
-            Err(error) => {
-                eprintln!("{error}");
-                std::process::exit(1);
-            }
-        }
-    }
-    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new(INFO)) {
-        match current()
             .and_then(|info| serde_json::to_string(&info).map_err(|error| error.to_string()))
         {
             Ok(info) => {
@@ -204,6 +192,32 @@ pub fn process_entry() {
         std::process::exit(78);
     }
     crate::startup_trace::mark("contracts-checked");
+}
+
+fn prepare_entry() {
+    #[cfg(windows)]
+    if let Err(error) = crate::win_process::privatize_standard_handles() {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+    crate::startup_trace::begin();
+}
+
+fn report_runtime_info() {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new(INFO)) {
+        match current()
+            .and_then(|info| serde_json::to_string(&info).map_err(|error| error.to_string()))
+        {
+            Ok(info) => {
+                println!("{info}");
+                std::process::exit(0);
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+    }
 }
 
 fn inspect(program: &Path) -> Result<Info, String> {

@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from release_manifest import create, executable_info
+from release_manifest import create, executable_info, verify_session_server
 
 GUI = Path("apps/gui")
 TARGETS = {
@@ -62,16 +62,18 @@ def build(target, output):
     bundle, name, suffix = TARGETS[target]
     programs = Path("target") / target / "release"
     subprocess.run(["cargo", "build", "--locked", "--release", "--target", target,
-                    "-p", "khor-cli", "--bin", "khor"], check=True)
+                    "-p", "khor-cli", "--bin", "khor",
+                    "-p", "khor-node", "--bin", "khor-server"], check=True)
     binaries = GUI / "src-tauri/binaries"
     binaries.mkdir(exist_ok=True)
-    shutil.copy2(programs / ("khor" + suffix), binaries / ("khor-" + target + suffix))
+    for program in ("khor", "khor-server"):
+        shutil.copy2(programs / (program + suffix), binaries / (program + "-" + target + suffix))
     config = {
         "build": {"beforeBuildCommand": ""},
         "bundle": {
             "active": True,
             "icon": ["icons/icon.ico", "icons/icon.png"],
-            "externalBin": ["binaries/khor"],
+            "externalBin": ["binaries/khor", "binaries/khor-server"],
         },
     }
     if bundle == "deb":
@@ -94,6 +96,7 @@ def build(target, output):
     app = programs / ("khor-gui" + suffix)
     cli = programs / ("khor" + suffix)
     app_info, cli_info = executable_info(app), executable_info(cli)
+    verify_session_server(programs / ("khor-server" + suffix), app_info)
     if (app_info["component"] != "desktop-app" or cli_info["component"] != "cli"
             or any(app_info[key] != cli_info[key] for key in ("build", "platform", "contract"))):
         raise ValueError("The application and its CLI must share their build and runtime contract")

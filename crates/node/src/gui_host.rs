@@ -764,7 +764,7 @@ fn spawn_ghost_prepared(
     if prepared_claim.is_some() && resume.is_none() {
         return Err("a recovery claim cannot start a New session".into());
     }
-    let image = crate::runtime_image::host()?;
+    let image = crate::runtime_image::session_host(crate::runtime_image::host)?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
         std::process::id(),
@@ -1084,7 +1084,7 @@ fn gui_environment(
                 .ok()
                 .is_none_or(|v| v["name"] != "khor")
         });
-        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
+        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::installed_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
     }
     Ok(environment)
 }
@@ -1117,7 +1117,17 @@ fn gui_host_main_with_timeouts(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let command = cmd.join(" ");
+    let command = match cmd.split_first() {
+        // Explicit executable paths already have their argument boundaries.
+        // Keep those paths out of the ACP parser's shell-word syntax.
+        Some((program, args))
+            if std::path::Path::new(program).is_absolute()
+                && std::path::Path::new(program).is_file() =>
+        {
+            serde_json::json!({ "command": program, "args": args }).to_string()
+        }
+        _ => cmd.join(" "),
+    };
     // The opener spawned this ghost standing in the person's own
     // directory; `cwd::standing` is that directory even after a node
     // has pinned the process elsewhere (第十四轮 第 4 条).

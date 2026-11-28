@@ -157,7 +157,7 @@ def mac_build(target, signed):
         catalog = Path(temporary)
         compile_icon(catalog)
         config = json.loads((GUI / "src-tauri/tauri.ci.json").read_text())
-        config["bundle"]["externalBin"] = ["binaries/khor"]
+        config["bundle"]["externalBin"] = ["binaries/khor", "binaries/khor-server"]
         config["bundle"]["icon"] = [str(catalog / "Assets.car") if Path(icon).suffix == ".icon" else icon
                                     for icon in config["bundle"]["icon"]]
         command = ["npm", "run", "tauri", "--", "build", "--ci", "--target", target,
@@ -169,6 +169,8 @@ def mac_build(target, signed):
     app = Path("target") / target / "release/bundle/macos/Khor.app"
     verify_app(app)
     if signed:
+        server = app / "Contents/MacOS/khor-server"
+        run(["codesign", "--verify", "--strict", str(server)])
         run(["codesign", "--verify", "--deep", "--strict", str(app)])
 
 

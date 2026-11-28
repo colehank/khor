@@ -43,6 +43,9 @@ jobs:
       - name: Build the App and its bundled CLI
         shell: bash
         run: python3 scripts/desktop_installer.py --target "$TARGET" --output desktop-product --frontend frontend
+      - name: Verify two Windows terminals share the dedicated host
+        shell: bash
+        run: python scripts/check-session-server.py "target/$TARGET/release/khor.exe" --sidecar "target/$TARGET/release/khor-server.exe"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: khor-windows-x86_64-app

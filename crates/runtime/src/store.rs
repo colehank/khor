@@ -95,7 +95,7 @@ impl Index {
         let recent = self.roles.entry(role).or_default();
         recent.retain(|entry| entry != id);
         recent.insert(0, id.into());
-        recent.truncate(2);
+        recent.truncate(if role == Role::SessionHost { 1 } else { 2 });
     }
     fn protected(&self) -> BTreeSet<&str> {
         self.roles.values().flatten().map(String::as_str).collect()
@@ -160,6 +160,35 @@ pub struct Usage {
 impl Store {
     pub fn local() -> io::Result<Self> {
         Self::open(local::local_directory()?, Limits::default())
+    }
+
+    /// A sibling catalog keeps pre-server binaries able to read their own index.
+    pub fn session_hosts() -> io::Result<Self> {
+        let legacy = Self::local()?;
+        Self::open(legacy.session_directory()?, legacy.limits)
+    }
+
+    fn session_directory(&self) -> io::Result<PathBuf> {
+        let mut name = self
+            .root
+            .file_name()
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "runtime directory needs a name",
+                )
+            })?
+            .to_os_string();
+        name.push("-sessions");
+        Ok(self.root.with_file_name(name))
+    }
+
+    fn existing_session_store(&self) -> io::Result<Option<Self>> {
+        let root = self.session_directory()?;
+        if !root.try_exists()? {
+            return Ok(None);
+        }
+        Self::open(root, self.limits).map(Some)
     }
 
     pub fn open(root: PathBuf, limits: Limits) -> io::Result<Self> {
@@ -497,7 +526,11 @@ impl Store {
 
     pub fn collect_all(&self) -> io::Result<Collection> {
         let mut result = self.collect()?;
-        for child in self.cli_stores()? {
+        for child in self
+            .cli_stores()?
+            .into_iter()
+            .chain(self.existing_session_store()?)
+        {
             let next = child.collect()?;
             result.removed.extend(next.removed);
             result.occupied.extend(next.occupied);
@@ -508,7 +541,11 @@ impl Store {
 
     pub fn usage_all(&self) -> io::Result<Usage> {
         let mut result = self.usage()?;
-        for child in self.cli_stores()? {
+        for child in self
+            .cli_stores()?
+            .into_iter()
+            .chain(self.existing_session_store()?)
+        {
             let next = child.usage()?;
             result.retained_bytes = result.retained_bytes.saturating_add(next.retained_bytes);
             result.active_old_bytes = result
@@ -566,7 +603,11 @@ impl Store {
     pub fn occupied_contracts(&self) -> io::Result<Vec<Contract>> {
         let mut result =
             self.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))?;
-        for child in self.cli_stores()? {
+        for child in self
+            .cli_stores()?
+            .into_iter()
+            .chain(self.existing_session_store()?)
+        {
             result
                 .extend(child.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))?);
         }

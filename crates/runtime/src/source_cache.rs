@@ -172,6 +172,14 @@ impl SourceCache {
     /// Every failure is a miss: an unreadable file, a corrupt cache, a
     /// missing image. The caller must be able to do the ordinary work.
     pub fn lookup(&self, source: &Path) -> io::Result<Option<Image>> {
+        self.lookup_with(source, |id| Store::local()?.hold(id))
+    }
+
+    pub fn lookup_with(
+        &self,
+        source: &Path,
+        hold: impl FnOnce(&str) -> io::Result<Image>,
+    ) -> io::Result<Option<Image>> {
         let Some(identity) = Identity::of(source)? else {
             return Ok(None);
         };
@@ -182,7 +190,7 @@ impl SourceCache {
         if !identity.matches(entry) {
             return Ok(None);
         }
-        match Store::local()?.hold(&entry.image) {
+        match hold(&entry.image) {
             Ok(image) => Ok(Some(image)),
             Err(_) => {
                 // The image was collected or the store moved on: drop the
@@ -198,6 +206,26 @@ impl SourceCache {
         let Some(identity) = Identity::of(source)? else {
             return Ok(());
         };
+        self.record(identity, image)
+    }
+
+    /// Only remember a publication if the installer left the source file in place.
+    pub fn remember_publication<E>(
+        &self,
+        source: &Path,
+        publish: impl FnOnce() -> Result<Image, E>,
+    ) -> Result<Image, E> {
+        let before = Identity::of(source).ok().flatten();
+        let image = publish()?;
+        if let Some(before) = before
+            && Identity::of(source).is_ok_and(|after| after.as_ref() == Some(&before))
+        {
+            let _ = self.record(before, &image);
+        }
+        Ok(image)
+    }
+
+    fn record(&self, identity: Identity, image: &Image) -> io::Result<()> {
         let mut file = self.read();
         file.version = VERSION;
         file.entries.insert(
