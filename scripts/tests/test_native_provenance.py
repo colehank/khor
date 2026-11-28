@@ -308,7 +308,7 @@ class ProvenanceTests(unittest.TestCase):
 
     def test_declared_build_environment_records_unset_and_hashes_values(self):
         names = ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS", "KHOR_BUILD_SOURCE",
-                 "KHOR_RELEASE_TAG", "KHOR_RELEASE_BUILD")
+                 "KHOR_RELEASE_TAG", "KHOR_RELEASE_BUILD", "KHOR_SERVER_BINARY")
         absent = p.environment()
         for name in names:
             with self.subTest(name=name):
@@ -668,9 +668,34 @@ class ProvenanceTests(unittest.TestCase):
         marker = Path(generated["out_dir"]).parent / "output"
         marker.write_text("cargo::rerun-if-env-changed=KHOR_BUILD_SOURCE\n"
                           "cargo::rerun-if-env-changed=KHOR_RELEASE_TAG\n"
-                          "cargo::rerun-if-env-changed=KHOR_RELEASE_BUILD\n")
+                          "cargo::rerun-if-env-changed=KHOR_RELEASE_BUILD\n"
+                          "cargo::rerun-if-env-changed=KHOR_SERVER_BINARY\n")
         receipt = p.verify_build(prepared, [generated, *self.rows()])
         self.assertEqual(len(receipt["generated"]), 1)
+
+    def test_embedded_session_server_is_verified_by_content(self):
+        package = self.metadata["packages"][1]
+        package["name"] = self.request["package"] = "khor-cli"
+        script = self.put("app/build.rs", "fn main() {}\n")
+        package["targets"].append({"name": "build-script-build", "kind": ["custom-build"],
+                                   "edition": "2024", "src_path": str(script)})
+        binary = self.base / "khor-server"
+        binary.write_bytes(b"first host")
+        os.environ["KHOR_SERVER_BINARY"] = str(binary)
+        prepared = self.prepare()
+        out = self.target / "debug/build/cli-output/out"
+        out.mkdir(parents=True)
+        marker = out.parent / "output"
+        marker.write_text(f"cargo::rerun-if-env-changed=KHOR_SERVER_BINARY\n"
+                          f"cargo::rerun-if-changed={binary}\n")
+        self.stamp_current_generation(prepared, out)
+        generated = {"reason": "build-script-executed", "package_id": "app", "out_dir": str(out)}
+        rows = [generated, *self.rows()]
+        receipt = p.verify_build(prepared, rows)
+        self.assertEqual(len(receipt["generated"]), 1)
+        binary.write_bytes(b"changed host at the same path")
+        with self.assertRaisesRegex(ValueError, "inputs changed"):
+            p.verify_build(prepared, rows)
 
     def gui_capabilities(self):
         package = self.metadata["packages"][1]

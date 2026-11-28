@@ -514,8 +514,9 @@ pub fn main_if_host(root: std::path::PathBuf) {
 
 /// Standalone entry point for the detached terminal and ACP session workers.
 pub fn run_session_server() -> Result<(), String> {
-    crate::runtime_image::enter_session_server()?;
     let root = crate::Node::root_from_env();
+    crate::config::apply_lang(&root);
+    crate::runtime_image::enter_session_server()?;
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("_host") => host_args(&root, &args[1..]),

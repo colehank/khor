@@ -26,11 +26,22 @@ def main():
                         "commands::tests::history_is_searched_by_words_directory_and_failure"])
     # Keep native transcript and file-lock coverage on the same desktop matrix.
     filters.extend(["adaptor::codex", "host::agent_draft::tests"])
+    target = json.loads(subprocess.check_output(
+        ["cargo", "metadata", "--locked", "--format-version", "1", "--no-deps"], text=True
+    ))["target_directory"]
+    debug = Path(target) / "debug"
+    suffix = ".exe" if sys.platform == "win32" else ""
     commands = [
+        ["cargo", "build", "--locked", "-p", "khor-cli", "--bin", "khor",
+         "-p", "khor-node", "--bin", "khor-server", "-p", "khor-acp", "--bin", "acp-stub"],
+        [sys.executable, "scripts/check-session-server.py", str(debug / f"khor{suffix}"),
+         "--sidecar", str(debug / f"khor-server{suffix}"), "--acp", str(debug / f"acp-stub{suffix}")],
+    ]
+    commands.extend(
         ["cargo", "test", "--locked", "-p", "khor-node", "--lib", name,
          "--", "--nocapture", "--test-threads=1"]
         for name in filters
-    ]
+    )
     commands.append(["cargo", "test", "--locked", "-p", "khor-node", "--test", "execution_wire", "--", "--nocapture", "--test-threads=1"])
     commands.append(["cargo", "test", "--locked", "--no-fail-fast", "-p", "khor-cli", "--test", "command_tasks",
                      "--test", "mcp_terminals", "--test", "run", "--test", "open",

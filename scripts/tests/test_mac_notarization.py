@@ -26,7 +26,7 @@ class SigningBoundaryTest(unittest.TestCase):
         def build(command, **_):
             self.assertEqual(len(catalogs), 1, "compile the catalog before starting Tauri")
             config = json.loads(command[command.index("--config") + 1])
-            self.assertEqual(config["bundle"]["externalBin"], ["binaries/khor"])
+            self.assertEqual(config["bundle"]["externalBin"], ["binaries/khor", "binaries/khor-server"])
             icons = config["bundle"]["icon"]
             self.assertEqual(Path(icons[0]), catalogs[0])
             self.assertTrue(catalogs[0].is_file())

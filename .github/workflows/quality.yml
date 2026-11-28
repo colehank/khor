@@ -485,8 +485,6 @@ jobs:
           cargo test --locked -p khor-gui-core --lib term::tests::ended_ -- --test-threads=1
           cargo test --locked -p khor-gui-core --lib chat::put_tests -- --test-threads=1
           cargo test --locked -p khor-cli --test runtime_image -- --test-threads=1
-          cargo build --locked -p khor-node --bin khor-server -p khor-acp --bin acp-stub
-          python3 scripts/check-session-server.py "$CARGO_TARGET_DIR/debug/khor" --sidecar "$CARGO_TARGET_DIR/debug/khor-server" --acp "$CARGO_TARGET_DIR/debug/acp-stub"
           cargo test --locked -p khor-node --lib accounts::pi_usage -- --test-threads=1
           cargo test --locked -p khor-node --lib khor_agent::conversations::tests -- --test-threads=1 | tee "$RUNNER_TEMP/conversations.log"
           grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/conversations.log"

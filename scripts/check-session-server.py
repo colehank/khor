@@ -65,9 +65,12 @@ def check(cli, sidecar, acp):
             cached = (store / generations[0] / name).resolve(strict=True)
             if sys.platform == "darwin":
                 subprocess.run(["codesign", "--verify", "--strict", str(cached)], check=True)
+            host_pids = set()
             for session in sessions:
                 host = home / ".khor/sessions" / session.replace("/", "-") / "host.json"
                 pid = json.loads(host.read_text())["host_pid"]
+                assert pid not in host_pids, (session, pid)
+                host_pids.add(pid)
                 if os.name == "nt":
                     exe = subprocess.check_output(["powershell.exe", "-NoProfile", "-Command",
                                                    f"(Get-Process -Id {int(pid)}).Path"], text=True).strip()

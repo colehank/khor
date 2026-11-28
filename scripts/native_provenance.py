@@ -68,7 +68,8 @@ def environment():
     # Hash values so credentials accidentally carried in CARGO_* are not printed.
     names = {"PATH", "CC", "CXX", "AR", "CFLAGS", "CPPFLAGS", "CXXFLAGS", "LDFLAGS",
              "SDKROOT", "MACOSX_DEPLOYMENT_TARGET", "IPHONEOS_DEPLOYMENT_TARGET",
-             "KHOR_AGENT_BUNDLE", "KHOR_BUILD_SOURCE", "KHOR_RELEASE_TAG", "KHOR_RELEASE_BUILD",
+             "KHOR_AGENT_BUNDLE", "KHOR_SERVER_BINARY", "KHOR_BUILD_SOURCE",
+             "KHOR_RELEASE_TAG", "KHOR_RELEASE_BUILD",
              "TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS"}
     names.update(n for n in os.environ if n.startswith(("CARGO", "RUST", "KHOR_", "CC_", "CXX_", "AR_", "PKG_CONFIG")))
     return {n: key(os.environ.get(n)) for n in sorted(names)}
@@ -168,6 +169,9 @@ def build_state(root, metadata, tools, request):
                 extras[name] = tree(root / name)
         if package["name"] == "khor-node" and os.environ.get("KHOR_AGENT_BUNDLE"):
             extras[os.environ["KHOR_AGENT_BUNDLE"]] = tree(os.environ["KHOR_AGENT_BUNDLE"])
+        if package["name"] == "khor-cli" and (server := os.environ.get("KHOR_SERVER_BINARY")):
+            binary = (directory / server).resolve(strict=True)
+            extras[str(binary)] = {".": regular(binary)["sha256"]}
         # Default to root-sensitive: env!, file!, generated absolute include paths,
         # and proc-macro expansion are not proven relocatable by a text search.
         states[ident] = {"manifest": str(Path(package["manifest_path"]).relative_to(root)),
