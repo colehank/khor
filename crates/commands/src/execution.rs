@@ -434,6 +434,9 @@ fn grammar(word: &str) -> &'static str {
         "unpin" => "unpin [-m] <session|machine>",
         "close" => "close <session>",
         "serve" => "serve",
+        "net" => {
+            "net status|export|self-hosted|refresh | net import <file> | net import-url <https-url> [<public-key>] | net keygen <key-file> | net sign <file> <revision> <key-file>"
+        }
         "relay" => {
             "relay [--dev|--tls-cert <file> --tls-key <file>|--acme <host> [--acme-contact <email>]] [--token <key>|--only-mine] [--rate <number>] [--metrics <address>] [--bind <address>] [--http <address>] [--quic <address>] [--state <directory>] [--stats|--tls-check]"
         }
@@ -495,7 +498,7 @@ mod tests {
     #[test]
     fn every_public_verb_has_one_catalog_entry_and_internal_verbs_stay_private() {
         let rows = catalog();
-        assert_eq!(rows.len(), 76);
+        assert_eq!(rows.len(), 77);
         for row in &rows {
             assert!(!row.word.starts_with('_'));
             assert!(row.usage.starts_with(&row.word));
