@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "policy": {
+    "khor_relays": false,
+    "n0_relays": false,
+    "khor_lookup": false,
+    "n0_lookup": false,
+    "n0_publish": false,
+    "mdns": true,
+    "peer_relay": false,
+    "advertised_relays": false,
+    "publish_direct": false,
+    "public_dns_fallback": false,
+    "pkarr": ["https://network.example.org/pkarr"],
+    "dns_origins": []
+  },
+  "relays": [{"url": "https://network.example.org:3341", "qad": 7842}],
+  "preferred": null
+}

@@ -7,7 +7,9 @@ import {navigationFixture,FixtureRefusal} from './navigation';
 import {officeFixturePreview,officeFixtures,visualFixturePreview,visualFixtures} from './preview-fixtures';
 import type {AppUpdateStatus} from '../../src/gen/bindings/AppUpdateStatus';
 import {pairingFixture} from './pairing';
-import {labSessionAttention,labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRelays,labRoadShare,labDoctor} from './world';
+import {networkSettingsFixture} from './network-settings-fixture';
+import type {NetworkPolicy, RelayWant} from '../../src/api';
+import {labSessionAttention,labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRoadShare,labDoctor} from './world';
 import {canonicalChatFixture} from '../../scripts/fixtures/canonical-chat-routes.mjs';
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import type {SessionRow} from '../../src/gen/bindings/SessionRow';
@@ -66,15 +68,21 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean;longHistory?:boolean;khorSession?:string;dsh?:boolean} = {}) {
+export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean;longHistory?:boolean;khorSession?:string;dsh?:boolean;relayPaths?:boolean} = {}) {
   const ids = defaultIds.map((id,index)=>index===4 ? options.khorSession??id : index===3&&options.dsh?'gui/dsh-review':id);
   const devices = labDevices(device,options.machines ?? 3);
+  if (options.relayPaths) {
+    if (devices[2]) devices[2].relay = "shared-relay.example.org";
+    if (devices[4]) Object.assign(devices[4], {hop:"relay", relay:"peer-advertised.example.org", rtt_ms:82});
+    if (devices[5]) Object.assign(devices[5], {hop:"forwarded", via:devices[1].shown, paused:false, rtt_ms:33});
+  }
   const importFrames=new Map<string,Frame[]>();
   const importReaders=new Map<string,ReturnType<typeof canonicalChatFixture>>();
   const imports = sessionImportFixture(devices.map(device=>device.id));
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
   const quota = labQuota(devices);
+  let network = networkSettingsFixture();
   // Only Lab browser storage is touched; metadata comes from the native key table.
   const settingsKey = 'khor.lab.settings-values';
   const readSetting = (key:string) => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -332,6 +340,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
             localStorage.removeItem(editorDiskKey);
             localStorage.removeItem('khor.lab.read-server');
           } catch { /* Server fixture has no browser storage. */ }
+          network = networkSettingsFixture();
           settingsValues={...settingsProfile};try { localStorage.removeItem(settingsKey); } catch { /* Server fixture has no browser storage. */ }
           holdSettings=false;refuseSetting=false;pendingSettings.length=0;
           failAcpSetup=false;acpSetupCalls.length=0;
@@ -544,7 +553,12 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case 'app_update_download': appUpdate.phase='ready';answer=appUpdate;break;
           case 'app_update_companions': answer=appUpdate;break;
           case 'app_update_install': throw new FixtureRefusal('Lab does not install applications');
-          case "relays": answer=labRelays;break;
+          case "relays": answer=network.relays();break;
+          case "network_settings": answer=network.settings();break;
+          case "set_network_policy": answer=network.setPolicy(body.policy as NetworkPolicy);break;
+          case "set_relays": answer=network.setRelays(body.relays as RelayWant[]);break;
+          case "set_preferred_relay": answer=network.setPreferred(typeof body.url === "string" ? body.url : null);break;
+          case "import_network_profile": answer=network.importProfile(String(body.input));break;
           case "road_share": answer=labRoadShare;break;
           case "doctor": answer=labDoctor;break;
           case "config": answer = settingsRows(); break;

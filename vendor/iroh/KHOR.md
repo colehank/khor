@@ -900,3 +900,13 @@ queue grew to 256 entries after 4 ticks
 可在隔离升级候选中删除对应实现，并跑相同协议的恢复/稳定性/转发与原生回归。
 只有全部剩余本地行为都有已验证替代时，才删除vendor子树和相应Cargo patch/exclude配置；
 任何未退出补丁都保留原因、覆盖、上游状态和退出条件。原始来源与失败记录不能随升级丢失。
+
+## 配置允许连接的 Relay
+
+Khor exposes a per-endpoint relay allowlist at the relay transport's outbound
+dispatch. A configured-only endpoint refuses learned relay URLs before any
+relay actor is started for them. The same check can exclude provider hosts
+from learned routes while allowing explicitly configured URLs. Native Pkarr
+HTTP requests do not follow redirects to other registries. Khor's self-hosted
+profile also sets the existing iroh DNS resolver to system configuration with
+its public fallback disabled.

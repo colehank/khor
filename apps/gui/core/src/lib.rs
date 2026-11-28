@@ -566,6 +566,9 @@ pub struct RelayWant {
     pub url: String,
     #[serde(default)]
     pub token: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub qad: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -1702,13 +1705,76 @@ pub fn rename_machine(root: &Path, id: &str, name: &str) -> Result<String, Strin
     open(root)?.rename_machine(id, name)
 }
 
+#[derive(Serialize)]
+pub struct NetworkSettings {
+    pub profile: khor_node::NetworkProfile,
+    pub source: Option<khor_node::network_configuration::ProfileSource>,
+    pub explicit: bool,
+    pub invalid: bool,
+    pub resident: bool,
+    pub pending_restart: bool,
+}
+
+pub fn network_settings(root: &Path) -> Result<NetworkSettings, String> {
+    let node = open(root)?;
+    let active = node.resident_network_revision()?;
+    Ok(NetworkSettings {
+        profile: node.network_profile(),
+        source: node.network_profile_source(),
+        explicit: node.has_explicit_network_policy(),
+        invalid: node.network_configuration_invalid(),
+        resident: active.is_some(),
+        pending_restart: active.is_some_and(|r| r.as_deref() != node.network_revision()),
+    })
+}
+
+pub fn set_network_policy(
+    root: &Path,
+    policy: serde_json::Value,
+) -> Result<NetworkSettings, String> {
+    let policy = serde_json::from_value(policy)
+        .map_err(|_| khor_catalog::msg::bad_network_configuration().to_string())?;
+    open(root)?.set_network_policy(policy)?;
+    network_settings(root)
+}
+
+pub async fn import_network_profile(
+    root: &Path,
+    input: String,
+    key: Option<String>,
+) -> Result<NetworkSettings, String> {
+    let text = input.trim();
+    if text.starts_with('{') && key.as_deref().is_none_or(str::is_empty) {
+        let root = root.to_owned();
+        let text = text.to_owned();
+        tokio::task::spawn_blocking(move || open(&root)?.import_network_profile(&text))
+            .await
+            .map_err(|e| e.to_string())??;
+    } else {
+        khor_node::network_configuration::import_profile_url(root, text, key.as_deref()).await?;
+    }
+    open_network_settings(root).await
+}
+
+pub async fn refresh_network_profile(root: &Path) -> Result<NetworkSettings, String> {
+    khor_node::network_configuration::refresh_profile(root).await?;
+    open_network_settings(root).await
+}
+
+async fn open_network_settings(root: &Path) -> Result<NetworkSettings, String> {
+    let root = root.to_owned();
+    tokio::task::spawn_blocking(move || network_settings(&root))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// This machine's relays, both halves (see [`RelayChoices`]).
 pub fn relays(root: &Path) -> Result<RelayChoices, String> {
     let node = open(root)?;
     Ok(RelayChoices {
         mine: node.relay_choices(),
         keyed: node.relays_keyed(),
-        in_use: node.relays().to_vec(),
+        in_use: node.configured_relay_urls(),
         only_mine: node.relays_only_mine(),
         preferred: node.preferred_relay(),
     })
@@ -1756,20 +1822,13 @@ pub fn set_relays(
         .map(|w| khor_node::Relay {
             url: w.url.clone(),
             token: w.token.clone(),
+            qad: w.qad,
             ..khor_node::Relay::default()
         })
         .collect();
-    let in_use = node.set_relays(&entries, only_mine)?;
-    Ok(RelayChoices {
-        mine: node.relay_choices(),
-        keyed: node.relays_keyed(),
-        in_use,
-        // Read back rather than echoed: the node is allowed to refuse
-        // the combination, and a screen painting what it sent would show
-        // a switch that is on while the file says off.
-        only_mine: node.relays_only_mine(),
-        preferred: node.preferred_relay(),
-    })
+    node.set_relays(&entries, only_mine)?;
+    drop(node);
+    relays(root)
 }
 
 pub fn close_session(root: &Path, id: &str) -> Result<(), String> {

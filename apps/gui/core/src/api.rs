@@ -610,6 +610,20 @@ pub fn answer(
             rt.block_on(crate::rejoin_now(root, &arg("machine")?))?;
             Ok("null".to_owned())
         }
+        "network_settings" => to_json(&crate::network_settings(root)?),
+        "set_network_policy" => {
+            let policy = args
+                .get("policy")
+                .cloned()
+                .ok_or("missing network policy")?;
+            to_json(&crate::set_network_policy(root, policy)?)
+        }
+        "import_network_profile" => to_json(&rt.block_on(crate::import_network_profile(
+            root,
+            arg("input")?,
+            opt_str("key")?,
+        ))?),
+        "refresh_network_profile" => to_json(&rt.block_on(crate::refresh_network_profile(root))?),
         "set_preferred_relay" => {
             let url = args.get("url").and_then(|v| v.as_str()).map(str::to_owned);
             crate::set_preferred_relay(root, url)?;

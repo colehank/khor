@@ -592,6 +592,11 @@ const VERBS: &[Verb] = &[
         run: serve,
         reach: Reach::Act,
     },
+    Verb {
+        word: "net",
+        run: network_configuration,
+        reach: Reach::Act,
+    },
     // Starts a server that listens on this machine's ports and lets
     // other machines through it — and `--stats` is the same word.
     Verb {
@@ -2435,6 +2440,93 @@ fn carry_in(rest: &[String]) -> Result<(), String> {
     let out = rt.block_on(n.carry_in(carrier, tokio::io::stdin(), tokio::io::stdout()));
     rt.shutdown_background();
     out
+}
+
+fn network_configuration(rest: &[String]) -> Result<(), String> {
+    let print_json = |value: &khor_node::NetworkProfile| {
+        let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+        out(format_args!("{text}\n"));
+        Ok(())
+    };
+    let read_profile = |path: &str| -> Result<String, String> {
+        use std::io::Read;
+        let fd = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        let mut text = String::new();
+        fd.take(65_537)
+            .read_to_string(&mut text)
+            .map_err(|e| e.to_string())?;
+        if text.len() > 65_536 {
+            return Err(msg::large_network_profile().to_string());
+        }
+        Ok(text)
+    };
+    match rest {
+        [op] if op == "export" => print_json(&node()?.network_profile()),
+        [op] if op == "status" => {
+            let node = node()?;
+            let active = node.resident_network_revision()?;
+            let state = serde_json::json!({
+                "configured_relays": node.configured_relay_urls(),
+                "invalid": node.network_configuration_invalid(),
+                "resident": active.is_some(),
+                "pending_restart": active.is_some_and(|r| r.as_deref() != node.network_revision()),
+            });
+            out(format_args!("{state}\n"));
+            Ok(())
+        }
+        [op] if op == "self-hosted" => print_json(&khor_node::NetworkProfile {
+            version: 1,
+            policy: khor_node::NetworkPolicy::self_hosted(),
+            relays: Vec::new(),
+            preferred: None,
+        }),
+        [op, path] if op == "import" => node()?.import_network_profile(&read_profile(path)?),
+        [op, url] if op == "import-url" => rt()?.block_on(
+            khor_node::network_configuration::import_profile_url(&command_root(), url, None),
+        ),
+        [op, url, key] if op == "import-url" => rt()?.block_on(
+            khor_node::network_configuration::import_profile_url(&command_root(), url, Some(key)),
+        ),
+        [op] if op == "refresh" => rt()?.block_on(
+            khor_node::network_configuration::refresh_profile(&command_root()),
+        ),
+        [op, path] if op == "keygen" => {
+            use std::io::Write;
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let key = iroh::SecretKey::generate();
+            let mut file = options.open(path).map_err(|e| e.to_string())?;
+            file.write_all(&key.to_bytes()).map_err(|e| e.to_string())?;
+            file.sync_all().map_err(|e| e.to_string())?;
+            out(format_args!("{}\n", key.public()));
+            Ok(())
+        }
+        [op, file, revision, key] if op == "sign" => {
+            let key: [u8; 32] = std::fs::read(key)
+                .map_err(|e| e.to_string())?
+                .try_into()
+                .map_err(|_| msg::bad_network_profile_signature().to_string())?;
+            let revision = revision
+                .parse()
+                .map_err(|_| msg::bad_network_profile_revision().to_string())?;
+            let profile = serde_json::from_str(&read_profile(file)?)
+                .map_err(|_| msg::bad_network_configuration().to_string())?;
+            let signed = khor_node::SignedProfile::sign(
+                revision,
+                profile,
+                &iroh::SecretKey::from_bytes(&key),
+            )?;
+            let text = serde_json::to_string_pretty(&signed).map_err(|e| e.to_string())?;
+            out(format_args!("{text}\n"));
+            Ok(())
+        }
+        _ => Err(usage_text().into()),
+    }
 }
 
 /// `khor _relay-check`: the relay urls on standard input, one a line;

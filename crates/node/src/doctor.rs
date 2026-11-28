@@ -259,7 +259,7 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed_if(
             run("relays"),
             "relays",
-            check_relays(node.relays().to_vec())
+            check_relays(node.configured_relay_urls(), node.allows_network_proxy())
         ),
         timed_if(run("peers"), "peers", check_peers(node)),
         timed_if(run("roster"), "roster", check_roster(node)),
@@ -603,7 +603,7 @@ async fn check_web(root: PathBuf) -> (Health, String, Option<String>) {
 }
 
 /// Every relay this machine would bind with: reachable, and how far.
-async fn check_relays(urls: Vec<String>) -> (Health, String, Option<String>) {
+async fn check_relays(urls: Vec<String>, proxy_from_env: bool) -> (Health, String, Option<String>) {
     if urls.is_empty() {
         return (Health::Warn, cli::doctor_relays_none().to_owned(), None);
     }
@@ -615,7 +615,7 @@ async fn check_relays(urls: Vec<String>) -> (Health, String, Option<String>) {
         .iter()
         .map(|url| {
             let url = url.clone();
-            tokio::spawn(async move { relay_rtt(&url).await })
+            tokio::spawn(async move { relay_rtt(&url, proxy_from_env).await })
         })
         .collect();
     let mut rtts = Vec::with_capacity(urls.len());
@@ -1136,7 +1136,13 @@ pub(crate) async fn any_relay_answers(urls: Vec<String>) -> bool {
     // A first success or a cancelled caller drops the remaining probes.
     let mut asks = tokio::task::JoinSet::new();
     for url in urls {
-        asks.spawn(async move { relay_rtt(&url).await.is_some() });
+        if url
+            .parse::<iroh::RelayUrl>()
+            .is_ok_and(|url| khor_net::endpoint::is_retired_relay(&url))
+        {
+            continue;
+        }
+        asks.spawn(async move { relay_rtt(&url, true).await.is_some() });
     }
     while let Some(ask) = asks.join_next().await {
         if ask.unwrap_or(false) {
@@ -1146,14 +1152,15 @@ pub(crate) async fn any_relay_answers(urls: Vec<String>) -> bool {
     false
 }
 
-async fn relay_rtt(url: &str) -> Option<u128> {
+async fn relay_rtt(url: &str, proxy_from_env: bool) -> Option<u128> {
     let mut builder = reqwest::Client::builder()
         .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(CHECK_TIMEOUT.saturating_sub(Duration::from_millis(400)));
     let from_env = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"]
         .into_iter()
         .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()));
-    if let Some(proxy) = from_env.and_then(|v| reqwest::Proxy::all(v).ok()) {
+    if proxy_from_env && let Some(proxy) = from_env.and_then(|v| reqwest::Proxy::all(v).ok()) {
         builder = builder.proxy(proxy);
     }
     let client = builder.build().ok()?;

@@ -60,12 +60,19 @@ fn far_command(carrier: &str) -> String {
 impl Node {
     /// Whether this machine carries members over ssh (`ssh-carry`).
     pub(crate) fn carry_on(&self) -> bool {
-        crate::config::on(self.root(), "ssh-carry")
+        self.relay_plan
+            .policy
+            .as_ref()
+            .is_none_or(|p| p.advertised_relays)
+            && crate::config::on(self.root(), "ssh-carry")
     }
 
     /// Whether this machine asks for and serves the peer hop (`peer-hop`).
     pub(crate) fn hop_on(&self) -> bool {
-        crate::config::on(self.root(), "peer-hop")
+        self.relay_plan.policy.as_ref().map_or_else(
+            || crate::config::on(self.root(), "peer-hop"),
+            |p| p.peer_relay && p.advertised_relays,
+        )
     }
 
     /// The carried transport to register at bind; `None` with both

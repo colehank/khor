@@ -3224,6 +3224,7 @@ export default function App() {
     morePage === null ? null : morePage === "connection" ? (
       <ConnectionPage
         devices={devices}
+        devicesRead={devicesRead}
         onClose={leaveMorePage}
         // The device table is the thing 暂停 changes, and every surface on
         // this screen paints off it.

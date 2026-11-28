@@ -601,6 +601,8 @@ impl PkarrRelayClientBuilder {
         #[cfg(wasm_browser)]
         let builder = reqwest_client_builder();
 
+        #[cfg(not(wasm_browser))]
+        let builder = builder.redirect(reqwest::redirect::Policy::none());
         let http_client = builder.build().expect("failed to create reqwest client");
         PkarrRelayClient {
             http_client,
@@ -637,6 +639,8 @@ impl PkarrRelayClient {
                 Err(err) => warn!(%proxy_url, "ignoring invalid proxy url for pkarr: {err:#}"),
             }
         }
+        #[cfg(not(wasm_browser))]
+        let builder = builder.redirect(reqwest::redirect::Policy::none());
         let http_client = builder.build().expect("failed to create reqwest client");
         Self {
             http_client,

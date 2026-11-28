@@ -1,0 +1,12 @@
+enable_relay = true
+enable_quic_addr_discovery = true
+enable_metrics = false
+http_bind_addr = "127.0.0.1:3340"
+access.allowlist = []
+
+[tls]
+https_bind_addr = "[::]:3341"
+quic_bind_addr = "[::]:7842"
+cert_mode = "Reloading"
+manual_cert_path = "/etc/khor-network/fullchain.pem"
+manual_key_path = "/etc/khor-network/privkey.pem"
