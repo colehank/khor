@@ -56,7 +56,7 @@ if (runtime.mode === 'frontend') {
     const landing = ['workspace','workspaces'].includes(runtime.scene) ? 'workspaces' : ['devices', 'pairing'].includes(runtime.scene) ? 'devices' : runtime.scene === 'browser' ? 'browser' : runtime.scene === 'quota' ? 'quota' : 'sessions';
     localStorage.setItem('khor.place', JSON.stringify({landing, screen: 'list'}));
   }
-  const fixture = createLabFixture(true, {settings:true,origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, longHistory:query.get('history')==='long', notices:query.get('notices')==='1',noticeBurst:query.get('notices')==='burst', page:runtime.scene==='page',khorSession,dsh:runtime.scene==='dsh'});
+  const fixture = createLabFixture(true, {settings:true,origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, longHistory:query.get('history')==='long', notices:query.get('notices')==='1',noticeBurst:query.get('notices')==='burst', page:runtime.scene==='page',khorSession,dsh:runtime.scene==='dsh',relayPaths:query.get('relay-paths')==='1'});
   // Seed the data boundary before App's first settings read. A later
   // theme write can otherwise lose to the previous page's saved answer.
   if(preview)fixture.request('set_config',{name:'theme',value:preview.theme});

@@ -1975,7 +1975,7 @@ aside[data-side] {
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
-[data-settings-card] > :not([data-setting-row], [data-nav-order]) {
+[data-settings-card] > :not([data-setting-row], [data-nav-order], [data-settings-subgroup]) {
   padding: var(--gap-in) var(--gap-row);
 }
 /* 外观's navigation rows are rows of the card: inset like its rows, and

@@ -1,0 +1,10 @@
+network.example.org {
+	handle /network.json {
+		root * /srv/khor-profile
+		file_server
+	}
+	handle /pkarr/* {
+		reverse_proxy 127.0.0.1:3343
+	}
+	respond 404
+}

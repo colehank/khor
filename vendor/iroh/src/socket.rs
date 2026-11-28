@@ -992,6 +992,8 @@ impl EndpointInner {
             tls_config: tls_config.clone(),
             metrics: metrics.socket.clone(),
             relay_map: relay_map.clone(),
+            configured_relays_only: net_report_config.configured_relays_only,
+            excluded_relay_hosts: net_report_config.excluded_relay_hosts.clone(),
         };
 
         let shutdown_state = ShutdownState::default();

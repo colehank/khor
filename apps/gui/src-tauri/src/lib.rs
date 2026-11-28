@@ -744,6 +744,31 @@ fn set_relays(
 }
 
 #[tauri::command]
+async fn network_settings() -> Result<khor_gui_core::NetworkSettings, String> {
+    off_main(|| khor_gui_core::network_settings(&Node::root_from_env())).await
+}
+
+#[tauri::command]
+async fn set_network_policy(
+    policy: serde_json::Value,
+) -> Result<khor_gui_core::NetworkSettings, String> {
+    off_main(move || khor_gui_core::set_network_policy(&Node::root_from_env(), policy)).await
+}
+
+#[tauri::command]
+async fn import_network_profile(
+    input: String,
+    key: Option<String>,
+) -> Result<khor_gui_core::NetworkSettings, String> {
+    khor_gui_core::import_network_profile(&Node::root_from_env(), input, key).await
+}
+
+#[tauri::command]
+async fn refresh_network_profile() -> Result<khor_gui_core::NetworkSettings, String> {
+    khor_gui_core::refresh_network_profile(&Node::root_from_env()).await
+}
+
+#[tauri::command]
 async fn road_share() -> Result<khor_gui_core::RoadShare, String> {
     khor_gui_core::road_share(&Node::root_from_env()).await
 }
@@ -6093,6 +6118,10 @@ pub fn run() {
             rename_machine,
             relays,
             set_relays,
+            network_settings,
+            set_network_policy,
+            import_network_profile,
+            refresh_network_profile,
             road_share,
             connections,
             reach_probe,

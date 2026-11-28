@@ -21,6 +21,26 @@ fn root(tag: &str) -> Scratch {
     Scratch(p)
 }
 
+#[test]
+fn a_retired_relay_does_not_keep_private_only_mode_enabled() {
+    let home = root("retired-relay");
+    let retired = "https://hk.relay.khor.cloud";
+    fs::write(
+        relay_prefs_path(&home),
+        serde_json::json!({
+            "relays": [{"url": retired}],
+            "only_mine": true,
+            "preferred": retired,
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let plan = chosen_relays(&home);
+    assert!(plan.mine.is_empty());
+    assert!(!plan.only_mine);
+    assert!(plan.preferred.is_none());
+}
+
 /// A scratch tree that takes itself away, **however the test leaves**
 /// (工作区批①'s `Scratch`, and `files.rs` keeps its own copy).
 ///

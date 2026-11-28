@@ -21,30 +21,8 @@ pub const UPDATE_ALPN: &[u8] = b"khor-update/1";
 /// with unless this machine was told to use only its own — each with
 /// the shared key its relay asks for.
 ///
-/// **Two, because one cannot be reached by everyone** (2026-10-01,
-/// measured before either went in):
-///
-/// - **Beijing**, plain HTTP on 3340. For machines whose network does
-///   not leave the mainland — the lab's three reach it in 5 ms and
-///   cannot reach Hong Kong at all (a campus network that carries
-///   domestic traffic only). An address and a port, no domain: a domain
-///   on a mainland machine's 443 needs an ICP filing.
-/// - **Hong Kong**, `hk.relay.khor.cloud`, TLS with a Let's Encrypt
-///   certificate. For everything that can cross the border, and for
-///   machines abroad.
-///
-/// Each endpoint homes on whichever it measures nearest; two machines
-/// on different homes meet through the callee's, and Beijing is the one
-/// both sides can reach. **Two addresses, never one name over both**: a
-/// relay is stateful — a machine is found only on the relay it is
-/// connected to — so one name resolving to two boxes splits the fleet.
-///
-/// **A key each, and not the same key.** A key compiled into a binary
-/// can be dug out of it, so these stop casual free-riding, not a
-/// determined one (CONNECT.md 分期 0 says the same); what they buy is
-/// that neither box is an open relay for every iroh program. Beijing's
-/// crosses the wire in the clear, which is why it must not also open
-/// Hong Kong.
+/// Both addresses are on the Beijing host. The TLS successor takes over
+/// when reachable, with a separate key from the one used over HTTP.
 ///
 /// **n0's public relays stay behind these as the fallback** (the owner,
 /// 2026-09-30: 「还是不去 n0 吧，n0 可以兜底」). [`bind_with`] is where
@@ -62,8 +40,7 @@ pub const UPDATE_ALPN: &[u8] = b"khor-update/1";
 /// ⚠️ 墓碑: until 2026-10-01 this was one open relay,
 /// `http://39.97.7.248:3340` — mandala's aliyun box on loan, running
 /// `iroh-relay --dev` and admitting everyone — with `KHOR_RELAY_TOKEN`
-/// a separate `None`. That box's lease ends; the key now rides with
-/// each address because the two relays do not share one.
+/// a separate `None`. The key now rides with each relay address.
 pub const KHOR_RELAYS: &[(&str, Serves, Option<&str>)] = &[
     (
         "http://101.200.80.77:3340",
@@ -95,12 +72,13 @@ pub const KHOR_RELAYS: &[(&str, Serves, Option<&str>)] = &[
         },
         Some("19ccb31e891ffa3ab66f95f5b743c7d4b419afe635b97e5e"),
     ),
-    (
-        "https://hk.relay.khor.cloud",
-        Serves::RELAY,
-        Some("a086ea41af0a8bfe73ac98a914a18542bea845123e8b9eaf"),
-    ),
 ];
+
+/// The retired Khor host can still appear in older device rows or settings.
+pub fn is_retired_relay(url: &Url) -> bool {
+    url.host_str()
+        .is_some_and(|host| host.trim_end_matches('.') == "hk.relay.khor.cloud")
+}
 
 /// **Beijing over TLS** (round NET-7, option B): the same box as
 /// `http://101.200.80.77:3340`, a second relay process on a high port
@@ -234,10 +212,10 @@ impl Relay {
             Some((bare, _)) => bare.to_string(),
             None => entry.to_string(),
         };
-        // The part before the query has to stand on its own too:
-        // `http://?token=x` parses as a url with the query, and not
-        // without it.
-        Url::parse(&url).ok()?;
+        // The part before the query has to stand on its own too.
+        if is_retired_relay(&Url::parse(&url).ok()?) {
+            return None;
+        }
         Some(Relay {
             url,
             token: param("token"),
@@ -456,15 +434,18 @@ pub const PUBLIC_RELAYS_ENV: &str = "KHOR_PUBLIC_RELAYS";
 /// the trailing slash, as the lists are; a list entry that names the home
 /// is not written twice.
 pub fn home_first(home: Option<&iroh::RelayUrl>, relays: &[String]) -> Vec<String> {
+    let home = home.filter(|url| !is_retired_relay(url));
     let mut out: Vec<String> = home
         .map(|h| h.as_str().trim_end_matches('/').to_owned())
         .into_iter()
         .collect();
     for r in relays {
-        let is_home = home.is_some_and(|h| r.parse::<iroh::RelayUrl>().is_ok_and(|u| &u == h));
-        if !is_home {
-            out.push(r.clone());
+        if let Ok(url) = r.parse::<iroh::RelayUrl>()
+            && (home == Some(&url) || is_retired_relay(&url))
+        {
+            continue;
         }
+        out.push(r.clone());
     }
     out
 }
@@ -591,7 +572,31 @@ pub async fn bind_pinned(
     (v4, v6): (u16, u16),
     carry: Option<&crate::carry::Links>,
 ) -> Result<iroh::Endpoint> {
-    let mut b = builder(secret, relays, n0, on_the_segment())?;
+    bind_network(
+        secret,
+        relays,
+        &crate::configuration::NetworkPolicy::legacy(n0),
+        true,
+        preferred,
+        (v4, v6),
+        carry,
+    )
+    .await
+}
+
+/// Binds both resident and one-shot endpoints with the same network settings.
+/// Legacy callers retain the original relay/provider behavior.
+pub async fn bind_network(
+    secret: iroh::SecretKey,
+    relays: &[Relay],
+    policy: &crate::configuration::NetworkPolicy,
+    legacy: bool,
+    preferred: Option<&str>,
+    (v4, v6): (u16, u16),
+    carry: Option<&crate::carry::Links>,
+) -> Result<iroh::Endpoint> {
+    let n0 = policy.n0_relays || (legacy && std::env::var_os(PUBLIC_RELAYS_ENV).is_some());
+    let mut b = policy_builder(secret, relays, policy, legacy, on_the_segment())?;
     if let Some(links) = carry {
         b = b.add_custom_transport(links.transport());
     }
@@ -612,13 +617,33 @@ pub async fn bind_pinned(
     }
     // `NetReportConfig` is non-exhaustive: built, then set.
     let mut config = iroh::endpoint::NetReportConfig::default();
-    config.preferred_relay = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok());
+    config.preferred_relay = preferred
+        .and_then(|u| u.parse::<iroh::RelayUrl>().ok())
+        .filter(|url| full_relay_map(relays, n0).contains(url));
     config.successors = successors(relays);
     config.fallback = fallback_tier(relays, n0)
         .into_iter()
         .map(|r| r.url.clone())
         .collect();
     config.home_dwell = HOME_DWELL;
+    config.configured_relays_only = !policy.advertised_relays;
+    config.excluded_relay_hosts = vec!["hk.relay.khor.cloud".into()];
+    if !legacy && !policy.khor_relays {
+        config
+            .excluded_relay_hosts
+            .extend(khor_tier().into_iter().filter_map(|relay| {
+                let url = Url::parse(&relay.url).ok()?;
+                Some(url.host_str()?.to_owned())
+            }));
+    }
+    if !legacy && !policy.n0_relays {
+        config
+            .excluded_relay_hosts
+            .push("*.relay.n0.iroh.link".into());
+        config
+            .excluded_relay_hosts
+            .push("*.staging-relay.n0.iroh.link".into());
+    }
     b = b.net_report_config(config);
     Ok(b.bind().await?)
 }
@@ -627,15 +652,32 @@ pub async fn bind_pinned(
 /// configuration can be read (its `Debug`) without a socket.
 /// `mdns` off is [`NO_MDNS_ENV`]: no service is built, so nothing
 /// announces and [`NEARBY`] stays empty.
+#[cfg(test)]
 fn builder(
     secret: iroh::SecretKey,
     relays: &[Relay],
     n0: bool,
     mdns: bool,
 ) -> Result<iroh::endpoint::Builder> {
+    policy_builder(
+        secret,
+        relays,
+        &crate::configuration::NetworkPolicy::legacy(n0),
+        true,
+        mdns,
+    )
+}
+
+fn policy_builder(
+    secret: iroh::SecretKey,
+    relays: &[Relay],
+    policy: &crate::configuration::NetworkPolicy,
+    legacy: bool,
+    mdns: bool,
+) -> Result<iroh::endpoint::Builder> {
     // Built here rather than by iroh so that `follow` can read what it
     // finds; registered on the builder all the same (`Prebuilt`).
-    let mdns = if mdns {
+    let mdns = if mdns && policy.mdns {
         let built = iroh_mdns_address_lookup::MdnsAddressLookup::builder()
             .build(secret.public())
             .context(msg::no_local_lookup())?;
@@ -644,46 +686,50 @@ fn builder(
     } else {
         None
     };
-    // The n0 preset is n0's relays plus a pkarr publisher, a pkarr
-    // resolver and a DNS lookup, all pointed at n0's servers; `Minimal`
-    // keeps only the crypto provider. The relay map is replaced below
-    // either way, so the preset decides the lookup services alone.
-    let mut builder = if n0 {
-        iroh::Endpoint::builder(iroh::endpoint::presets::N0)
-    } else {
-        iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+    use iroh::address_lookup::{AddrFilter, DnsAddressLookup, PkarrPublisher, PkarrResolver};
+    let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .secret_key(secret)
+        // Compiled-in Mozilla roots instead of the operating system's:
+        // the system route reads the macOS Keychain, and on a Mac
+        // operated over ssh that read hangs 25-40 seconds — every
+        // process's FIRST bind paid it (measured 2026-08-20: khor's
+        // own test binaries at 36-43s per process, while the verdict
+        // hid because the hang is synchronous and froze single-thread
+        // tokio timers with it, #73). These roots only verify outward
+        // TLS (https relays); iroh's own encryption never touched the
+        // Keychain in the first place.
+        .ca_tls_config(ca_roots())
+        .transport_config(transport())
+        .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()))
+        .alpns(vec![
+            ALPN.to_vec(),
+            TUNNEL_ALPN.to_vec(),
+            UPDATE_ALPN.to_vec(),
+        ])
+        // The filter that keeps this machine from publishing an address
+        // nobody can route to belongs where the services are assembled
+        // (the reason is the mDNS service's, below). It also decides what
+        // a hole-punching round offers the far side (vendor/iroh patch 9):
+        // upstream offered every address, 198.18.0.1 among them.
+        .addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
+            if addrs.iter().any(unroutable) {
+                std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
+            } else {
+                std::borrow::Cow::Borrowed(addrs)
+            }
+        }));
+    if policy.advertised_relays {
+        builder = builder.proxy_from_env();
     }
-    .secret_key(secret)
-    // Compiled-in Mozilla roots instead of the operating system's:
-    // the system route reads the macOS Keychain, and on a Mac
-    // operated over ssh that read hangs 25-40 seconds — every
-    // process's FIRST bind paid it (measured 2026-08-20: khor's
-    // own test binaries at 36-43s per process, while the verdict
-    // hid because the hang is synchronous and froze single-thread
-    // tokio timers with it, #73). These roots only verify outward
-    // TLS (https relays); iroh's own encryption never touched the
-    // Keychain in the first place.
-    .ca_tls_config(ca_roots())
-    .proxy_from_env()
-    .transport_config(transport())
-    .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()))
-    .alpns(vec![
-        ALPN.to_vec(),
-        TUNNEL_ALPN.to_vec(),
-        UPDATE_ALPN.to_vec(),
-    ])
-    // The filter that keeps this machine from publishing an address
-    // nobody can route to belongs where the services are assembled
-    // (the reason is the mDNS service's, below). It also decides what
-    // a hole-punching round offers the far side (vendor/iroh patch 9):
-    // upstream offered every address, 198.18.0.1 among them.
-    .addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
-        if addrs.iter().any(unroutable) {
-            std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
-        } else {
-            std::borrow::Cow::Borrowed(addrs)
-        }
-    }));
+    if !policy.public_dns_fallback {
+        use iroh::dns::{DnsResolver, FallbackMode};
+        builder = builder.dns_resolver(
+            DnsResolver::builder()
+                .with_system_defaults()
+                .with_fallback_mode(FallbackMode::Never)
+                .build(),
+        );
+    }
     // **On the builder, not on the bound endpoint — and that is the
     // whole difference between wired up and merely present.**
     // `endpoint.address_lookup().add(..)` after a bind (what the
@@ -696,25 +742,52 @@ fn builder(
     if let Some(mdns) = mdns {
         builder = builder.address_lookup(Prebuilt(mdns));
     }
-    // **Every registry this machine's servers keep** ([`Relay::pkarr`]):
-    // this machine publishes there and looks its peers up there, beside
-    // n0's when that tier is on (the owner, 2026-10-09: 「两边都用，看谁
-    // 最快」). iroh asks every lookup service at once and a dial takes
-    // whatever answers first. Unlike n0's, ours carry the direct
-    // addresses too (the filter above still drops the unroutable): a
-    // peer that finds this machine there can dial it straight.
-    for url in registries(relays) {
+    if policy.n0_lookup {
         builder = builder
-            .address_lookup(
-                iroh::address_lookup::PkarrPublisher::builder(url.clone())
-                    .addr_filter(iroh::address_lookup::AddrFilter::unfiltered()),
-            )
-            .address_lookup(iroh::address_lookup::PkarrResolver::builder(url));
+            .address_lookup(PkarrResolver::n0_dns())
+            .address_lookup(DnsAddressLookup::n0_dns());
     }
+    if policy.n0_publish {
+        let publisher = PkarrPublisher::n0_dns();
+        builder = builder.address_lookup(if policy.publish_direct && !legacy {
+            publisher.addr_filter(AddrFilter::unfiltered())
+        } else {
+            publisher
+        });
+    }
+    for origin in &policy.dns_origins {
+        builder = builder.address_lookup(DnsAddressLookup::builder(origin.clone()));
+    }
+    let mut urls = if legacy {
+        registries(relays)
+    } else {
+        Vec::new()
+    };
+    if !legacy && policy.khor_lookup {
+        urls.extend(registries(&khor_tier()));
+    }
+    for url in policy.pkarr.iter().filter_map(|url| pkarr_url(url)) {
+        if !urls.contains(&url) {
+            urls.push(url);
+        }
+    }
+    for url in urls {
+        let publisher = PkarrPublisher::builder(url.clone());
+        builder = builder
+            .address_lookup(if policy.publish_direct {
+                publisher.addr_filter(AddrFilter::unfiltered())
+            } else {
+                publisher
+            })
+            .address_lookup(PkarrResolver::builder(url));
+    }
+    let n0 = policy.n0_relays || (legacy && std::env::var_os(PUBLIC_RELAYS_ENV).is_some());
     let map = full_relay_map(relays, n0);
-    if !map.is_empty() {
-        builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(map));
-    }
+    builder = builder.relay_mode(if map.is_empty() && !policy.advertised_relays {
+        iroh::endpoint::RelayMode::Disabled
+    } else {
+        iroh::endpoint::RelayMode::Custom(map)
+    });
     // **`KHOR_RELAY_ONLY`: no direct road at all**, every byte through a
     // relay — the network a phone on carrier NAT often has, made on
     // purpose. A diagnostic and the tests' way to put a slow relay
@@ -805,7 +878,7 @@ fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
 /// relay, and still has a public tier to home on.
 fn fallback_tier(relays: &[Relay], n0: bool) -> Vec<std::sync::Arc<iroh::RelayConfig>> {
     let named = std::env::var(PUBLIC_RELAYS_ENV).ok();
-    if !n0 && named.is_none() {
+    if !n0 {
         return Vec::new();
     }
     let public: Vec<std::sync::Arc<iroh::RelayConfig>> = match named {
@@ -824,6 +897,16 @@ fn fallback_tier(relays: &[Relay], n0: bool) -> Vec<std::sync::Arc<iroh::RelayCo
         }
     }
     out
+}
+
+pub fn public_relay_urls(relays: &[Relay], n0: bool, legacy: bool) -> Vec<String> {
+    fallback_tier(
+        relays,
+        n0 || (legacy && std::env::var_os(PUBLIC_RELAYS_ENV).is_some()),
+    )
+    .into_iter()
+    .map(|r| r.url.to_string())
+    .collect()
 }
 
 /// **How long a home that still answers is kept before latency alone may
@@ -870,6 +953,9 @@ pub fn relay_map(relays: &[Relay]) -> iroh::RelayMap {
 /// costs every report a dead-port wait.
 fn relay_config(r: &Relay) -> Option<std::sync::Arc<iroh::RelayConfig>> {
     let url = r.url.parse::<iroh::RelayUrl>().ok()?;
+    if is_retired_relay(&url) {
+        return None;
+    }
     let mut c = iroh::RelayConfig::from(url);
     match (c.quic.as_mut(), r.qad) {
         (Some(q), Some(port)) => q.port = port,
@@ -920,7 +1006,7 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
             }
             std::net::IpAddr::V6(_) => false,
         },
-        iroh::TransportAddr::Relay(_) => false,
+        iroh::TransportAddr::Relay(url) => is_retired_relay(url),
         // A carried road (round ROAD-2) is this machine's id on a link
         // only the far end of that link holds: nobody else can use it.
         iroh::TransportAddr::Custom(_) => true,
@@ -949,6 +1035,15 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
 /// relay url in the address; a key goes only to a relay in this
 /// machine's own map.
 pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<iroh::EndpointAddr> {
+    dial_addr_with_local(id_hex, direct, relays, true)
+}
+
+pub fn dial_addr_with_local(
+    id_hex: &str,
+    direct: &[String],
+    relays: &[String],
+    local_lookup: bool,
+) -> Result<iroh::EndpointAddr> {
     let id: iroh::EndpointId = id_hex.parse().context(msg::not_a_machine_id_short())?;
     let mut addr = iroh::EndpointAddr::new(id);
     // **What mDNS saw goes in beside the stored hints, not instead of
@@ -960,12 +1055,17 @@ pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<i
     //
     // It is merged **here**, at the one door every khor dial goes
     // through, so「我在同一个网段里」needs no caller to remember it.
-    let nearby = nearby(&id);
+    let nearby = if local_lookup {
+        nearby(&id)
+    } else {
+        Vec::new()
+    };
     for road in direct.iter().chain(relays).chain(nearby.iter()) {
         if let Ok(sock) = road.parse::<std::net::SocketAddr>() {
             addr = addr.with_ip_addr(sock);
         } else if (road.starts_with("http://") || road.starts_with("https://"))
             && let Ok(url) = road.parse::<iroh::RelayUrl>()
+            && !is_retired_relay(&url)
         {
             addr = addr.with_relay_url(url);
         }
@@ -1074,7 +1174,7 @@ mod tests {
     fn the_live_home_is_published_first_and_once() {
         let mine = vec![
             "http://101.200.80.77:3340".to_owned(),
-            "https://hk.relay.khor.cloud".to_owned(),
+            BEIJING_TLS.to_owned(),
         ];
         let aps1: iroh::RelayUrl = "https://aps1-1.relay.n0.iroh.link.".parse().unwrap();
         assert_eq!(
@@ -1082,12 +1182,38 @@ mod tests {
             [
                 "https://aps1-1.relay.n0.iroh.link.",
                 "http://101.200.80.77:3340",
-                "https://hk.relay.khor.cloud"
+                BEIJING_TLS,
             ]
         );
         let beijing: iroh::RelayUrl = "http://101.200.80.77:3340".parse().unwrap();
         assert_eq!(home_first(Some(&beijing), &mine), mine);
         assert_eq!(home_first(None, &mine), mine);
+    }
+
+    #[test]
+    fn retired_hong_kong_relay_is_ignored_in_old_hints() {
+        let old = "https://HK.relay.khor.cloud./".to_owned();
+        let remaining = ["http://101.200.80.77:3340", BEIJING_TLS];
+        assert_eq!(
+            khor_tier()
+                .iter()
+                .map(|r| r.url.as_str())
+                .collect::<Vec<_>>(),
+            remaining
+        );
+        let peer = iroh::SecretKey::generate().public().to_string();
+        let relays = vec![BEIJING_TLS.to_owned(), old.clone()];
+        let direct = vec!["192.168.1.9:3340".to_owned(), old.clone()];
+        let addr = dial_addr(&peer, &direct, &relays).unwrap();
+        let beijing: iroh::RelayUrl = BEIJING_TLS.parse().unwrap();
+        assert_eq!(addr.relay_urls().collect::<Vec<_>>(), [&beijing]);
+        assert_eq!(addr.ip_addrs().count(), 1);
+        assert_eq!(
+            home_first(Some(&old.parse().unwrap()), &relays),
+            [BEIJING_TLS]
+        );
+        assert!(Relay::parse(&old).is_none());
+        assert!(Relay::parse("https://other.relay.khor.cloud").is_some());
     }
 
     /// The [`follow`] tasks alive, by the key whose mDNS service each
@@ -1558,7 +1684,7 @@ mod tests {
             ip("169.254.7.7:53181"),
             // A public address.
             ip("48.47.144.30:40217"),
-            // Relays are not IPs and are never this filter's business.
+            // An ordinary relay is still published.
             iroh::TransportAddr::Relay("http://39.97.7.248:3340".parse().unwrap()),
         ] {
             assert!(

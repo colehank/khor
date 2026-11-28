@@ -394,7 +394,7 @@ function KeyboardMatters({ onEdit }: { onEdit: () => void }) {
           mark={{ "data-key-panel-wake": true }}
           options={WAKES.map((w) => ({
             key: w,
-            label: { auto: gui.term_wake_auto, screen: gui.term_wake_screen, button: gui.term_wake_button }[w],
+            label: { auto: gui.automatic, screen: gui.term_wake_screen, button: gui.term_wake_button }[w],
           }))}
         />
       </div>
@@ -441,7 +441,7 @@ export function KeyRowEditor({open,onOpenChange}: {open:boolean;onOpenChange:(op
       <DialogBody className="flex min-w-0 flex-col gap-row">
         <KeyRowList editing={editing} setEditing={edit} formId={formId} onReady={setCanSave} onDirty={setDirty}/>
         {editing===undefined&&coarse&&<div data-key-row-preferences className="flex flex-col rounded-lg bg-grouped">
-          <PopupRow name="term-wake" label={gui.term_wake} value={wake} choices={WAKES.map(w=>({value:w,label:{auto:gui.term_wake_auto,screen:gui.term_wake_screen,button:gui.term_wake_button}[w]}))} onPick={w=>setTermWake(w as Wake)}/>
+          <PopupRow name="term-wake" label={gui.term_wake} value={wake} choices={WAKES.map(w=>({value:w,label:{auto:gui.automatic,screen:gui.term_wake_screen,button:gui.term_wake_button}[w]}))} onPick={w=>setTermWake(w as Wake)}/>
           <SwitchRow name="term-keys-hw" label={gui.term_keys_hw} on={keysHw} onToggle={()=>setTermKeysHw(!keysHw)}/>
           <SwitchRow name="term-joy-haptic" label={gui.term_joy_haptic} on={haptic} onToggle={()=>setTermJoyHaptic(!haptic)}/>
         </div>}

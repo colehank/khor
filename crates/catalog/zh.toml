@@ -388,6 +388,9 @@ usage = """
                         列表里拿掉，那边的会话一个字节不动，它回到候选里）
   serve                 常驻：应答别人、代跑本机动词、每 5 秒同步全网
                         （顺带把网页版也开在局域网上，见 web）
+  net status | export | self-hosted | import <file> | import-url <https-url> [public-key]
+      refresh | keygen <key-file> | sign <file> <revision> <key-file>
+                        管理本机网络配置与配置签名
   relay --dev | --tls-cert 证书 --tls-key 私钥 | --acme 域名 [--acme-contact 邮箱]
         [--token 密钥 | --only-mine] [--rate 字节每秒] [--metrics 地址]
         [--bind 地址] [--http 地址] [--quic 地址] [--state 目录] | --stats [--state 目录]
@@ -1458,6 +1461,17 @@ watch-path-twice = "目录重复：{0}"
 # 连不上」weeks later, pointing at the network — and the user is looking
 # at a screen that still lists the relay they typed.
 not-a-relay-url = "不是一个中继地址：{0}"
+retired-relay-url = "这个中继已停用：{0}"
+bad-network-registry = "Pkarr 登记地址无效：{0}"
+bad-network-dns-origin = "设备寻址域名无效：{0}"
+bad-network-configuration = "无法读取网络配置"
+bad-network-profile-signature = "网络配置的签名与固定的公钥不符"
+bad-network-profile-revision = "网络配置的版本号缺失或早于已保存的版本"
+bad-network-profile-source = "请输入 HTTPS 网络配置地址，地址中不能包含账户、查询参数或片段"
+bad-network-profile-download = "下载网络配置失败"
+large-network-profile = "网络配置超过 64 KiB"
+network-profile-conflict = "下载期间网络设置已更改，请重试"
+no-network-profile-source = "此设备没有固定的网络配置来源"
 # 局域网发现起不来。不致命——中继照常,只是找隔壁那台也要绕中继走;
 # 而它起不来时没有任何症状,所以这句是唯一会说话的东西。
 no-local-lookup = "局域网发现无法启动"
@@ -3162,8 +3176,7 @@ conn-peer-rtt = "往返 {0}"
 conn-peer-failed = "上次出错（{0}）：{1}"
 conn-unanswered = "常驻没有回答"
 relays-preferred = "首选中继"
-relays-preferred-auto = "自动（最近的）"
-relays-preferred-note = "连得上时住在这台；下次重连起生效"
+relays-preferred-note = "优先使用所选中继，不可达时自动回退"
 # 等远端机器回应时的三档（round NET-FIX）：不到 1 秒只有骨架；1 秒起骨架下多一个
 # 转圈；8 秒起说清在等哪台、等了多久，并给「停止等待」「重试」。
 waiting-on = "仍在等待 {0} 回应 · {1}"
@@ -3311,7 +3324,6 @@ term-font-too-big = "字体文件不能超过 {0} MB"
 # raises the keyboard. Replaces term-tap-keyboard.
 term-wake = "键盘唤醒"
 term-wake-note = "自动：点在正在输入的那一行时弹出键盘，点在别处时收起"
-term-wake-auto = "自动"
 term-wake-screen = "点击屏幕"
 term-wake-button = "点击按钮"
 # A command block's actions (roadmap 2.3), on a right-click or a long
@@ -4344,6 +4356,7 @@ identity-alone = "尚未与其他机器配对"
 # 「不是所有的设置都要去铺在界面上」。网络页的中继折在这里过
 # (2026-09-20 → 09-28),现在是网络页上敞开的一组。
 advanced = "高级"
+automatic = "自动"
 # 身份卡上「本机开着哪几张界面」那一节 (docs/MORE.md 头像页)。
 # 这里的「界面」是桌面 app 和网页脸,不是头像;事实从节点拿
 # (`khor_node::face::faces`,CLI 那边是 `khor faces`)。
@@ -4502,12 +4515,69 @@ relays-hint = "http://地址:端口"
 # `khor serve` and every standing connection keep the one they started
 # with. Without this line the screen shows a change that took and a
 # network that did not move, and nothing anywhere connects the two.
+net-profile-files = "配置文件"
+net-summary-public-infrastructure = "公共基础设施"
+net-summary-advertised = "对端公布"
+net-summary-custom-services = "自建"
+net-summary-peer = "设备转发"
+net-summary-local = "局域网发现"
+net-summary-no-sources = "未配置服务"
+net-summary-profile-actions = "导入与导出"
+net-detail-config-status = "配置状态"
+net-detail-config-sources = "已选来源"
+net-detail-invalid = "配置无效"
+net-detail-no-relay-routes = "暂无中继连接"
+net-relay-manage-pool = "管理中继池"
+net-relay-forwarding = "转发设置"
+net-relay-select-auto = "自动选择"
+net-relay-no-candidates = "暂无可选中继"
+net-relay-set-preferred = "设为首选"
+net-relay-clear-preferred = "取消首选"
+net-relay-unknown-server = "未知中继服务器"
+net-relay-unknown-device = "未知转发设备"
+net-profile-mode = "连接策略"
+net-profile-auto = "自动配置"
+net-profile-custom = "自定义策略"
+net-profile-private = "完全自管"
+net-profile-active = "已生效"
+net-profile-restart = "已保存，重启 Khor 或 khor serve 后生效"
+net-profile-stopped = "下次启动时生效"
+net-profile-invalid = "配置文件无效。请重新保存或导入配置。"
+net-profile-import = "导入配置"
+net-profile-input = "配置 JSON 或 HTTPS 链接"
+net-profile-key = "签名公钥（导入 HTTPS 链接时可填）"
+net-profile-key-note = "填写公钥后，刷新时只接受签名有效的新版。"
+net-profile-export = "可移植配置"
+net-profile-export-action = "查看 JSON"
+net-profile-source = "已固定的签名配置来源"
+net-profile-refresh = "检查配置更新"
+net-relay-khor = "Khor 公共备用中继"
+net-relay-n0 = "iroh 公共备用中继"
+net-relay-advertised = "允许对端公布的中继"
+net-relay-advertised-note = "关闭后，只连接已配置的中继。"
+net-addressing = "设备寻址"
+net-lookup-khor = "Khor 共享寻址"
+net-lookup-n0 = "查询 iroh 公共寻址"
+net-publish-n0 = "登记到 iroh 公共寻址"
+net-lookup-private = "自建寻址"
+net-lookup-edit = "编辑目录"
+net-lookup-pkarr = "Pkarr 地址"
+net-lookup-dns = "设备寻址 DNS 域名"
+net-lookup-lines = "每行填写一个地址或域名。"
+net-publish-direct = "向目录登记直连 IP 地址"
+net-publish-direct-note = "默认只登记中继地址。"
+net-dns-fallback = "公共 DNS 兜底"
+net-dns-fallback-note = "系统 DNS 失败时，用公共 DNS 解析服务域名。"
+net-lookup-mdns = "局域网发现（mDNS）"
+net-relay-peers = "允许通过其他设备转发"
+net-relay-peers-note = "允许对端公布的中继时，才可使用设备转发。"
+net-qad-port = "QUIC 地址探测 UDP 端口（选填）"
 relays-after-restart = "新添加的中继在 khor serve 重启后生效"
 # What the machine is dialling on right now, the built-in tier included.
 # Separate from the list above because nothing here can be removed — a
 # row with a dead delete button and no reason next to it is worse than
 # no row.
-relays-in-use = "使用中"
+relays-in-use = "当前使用"
 # The exclusive switch. It reads as a sentence rather than a label
 # because what it does is not guessable from a noun: 「中继」 alone would
 # leave「加了这台之后原来那些还在不在」unanswered, which is the only
@@ -4522,7 +4592,6 @@ relays-only-mine = "只使用自己的中继"
 relays-key = "中继密钥"
 relays-key-hint = "密钥（没有就留空）"
 relays-keyed = "带密钥"
-relays-scheme-https = "HTTPS"
 relays-scheme-http = "HTTP，明文"
 back = "返回"
 # The narrow session page's foot (2026-10-02, iOS 第三步 A). The switch
